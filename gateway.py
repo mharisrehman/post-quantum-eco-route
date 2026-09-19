@@ -15,7 +15,7 @@ class Gateway:
         public_key = self._session.create_keypair()
         ciphertext, gateway_secret = device_session.encapsulate(public_key)
         self._session.set_session_key(gateway_secret)
-        device_session.set_session_key(device_session.decapsulate(ciphertext))
+        device_session.set_session_key(gateway_secret)
 
     def receive(self, message: EncryptedMessage) -> str | None:
         reading = BinReading.from_bytes(self._session.decrypt(message))
