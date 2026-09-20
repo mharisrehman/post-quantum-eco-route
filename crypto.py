@@ -51,4 +51,6 @@ class MlKemSession:
     def decrypt(self, message: EncryptedMessage) -> bytes:
         if self._session_key is None:
             raise RuntimeError("session key has not been established")
-        return AESGCM(self._session_key).decrypt(message.nonce, message.ciphertext, None)
+        return AESGCM(self._session_key).decrypt(
+            message.nonce, message.ciphertext, None
+        )

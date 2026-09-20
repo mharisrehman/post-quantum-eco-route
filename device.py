@@ -20,7 +20,9 @@ class WasteBin:
 
 
 class DeviceSimulator:
-    def __init__(self, bins: list[WasteBin], interval_seconds: float = 10.0) -> None:
+    def __init__(
+        self, bins: list[WasteBin], interval_seconds: float = 10.0
+    ) -> None:
         self.bins = bins
         self.interval_seconds = interval_seconds
 
@@ -32,7 +34,9 @@ class DeviceSimulator:
             if cycles is None:
                 time.sleep(self.interval_seconds)
 
-    def run(self, send: Callable[[BinReading], None], cycles: int | None = None) -> None:
+    def run(
+        self, send: Callable[[BinReading], None], cycles: int | None = None
+    ) -> None:
         for reading in self.readings(cycles):
             send(reading)
 
