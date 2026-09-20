@@ -12,5 +12,7 @@ class CloudService:
     def process(self, reading: BinReading) -> str | None:
         self._save_reading(reading)
         if reading.fill_level > 80:
-            return f"Pickup alert: {reading.bin_id} is {reading.fill_level}% full"
+            return (
+                f"Pickup alert: {reading.bin_id} is {reading.fill_level}% full"
+            )
         return None

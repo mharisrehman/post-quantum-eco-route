@@ -24,7 +24,9 @@ def test_gateway_establishes_session_and_forwards_reading() -> None:
     device = MlKemSession(FakeKem)
     gateway_session = MlKemSession(FakeKem)
     forwarded = []
-    gateway = Gateway(lambda reading: forwarded.append(reading) or None, gateway_session)
+    gateway = Gateway(
+        lambda reading: forwarded.append(reading) or None, gateway_session
+    )
 
     gateway.establish_session(device)
     gateway.receive(device.encrypt(BinReading("bin-1", 42, "now").to_bytes()))
