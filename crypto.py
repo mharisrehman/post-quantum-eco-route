@@ -1,7 +1,7 @@
 """ML-KEM key exchange and AES-GCM session encryption."""
 
-from dataclasses import dataclass
 import os
+from dataclasses import dataclass
 from typing import Any
 
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
@@ -27,16 +27,16 @@ class MlKemSession:
         self._session_key: bytes | None = None
 
     def create_keypair(self) -> bytes:
-        public_key, self._private_key = self._kem.generate_keypair()
+        public_key, self._private_key = self._kem.keygen()
         return public_key
 
     def encapsulate(self, public_key: bytes) -> tuple[bytes, bytes]:
-        return self._kem.encrypt(public_key)
+        return self._kem.encaps(public_key)
 
     def decapsulate(self, ciphertext: bytes) -> bytes:
         if self._private_key is None:
             raise RuntimeError("create_keypair must be called first")
-        return self._kem.decrypt(self._private_key, ciphertext)
+        return self._kem.decaps(self._private_key, ciphertext)
 
     def set_session_key(self, shared_secret: bytes) -> None:
         self._session_key = shared_secret[:32]

@@ -5,16 +5,16 @@ from models import BinReading
 
 class FakeKem:
     @staticmethod
-    def generate_keypair():
+    def keygen():
         return b"public", b"private"
 
     @staticmethod
-    def encrypt(public_key):
+    def encaps(public_key):
         assert public_key == b"public"
         return b"kem-ciphertext", b"shared-secret" * 4
 
     @staticmethod
-    def decrypt(private_key, ciphertext):
+    def decaps(private_key, ciphertext):
         assert private_key == b"private"
         assert ciphertext == b"kem-ciphertext"
         return b"shared-secret" * 4
