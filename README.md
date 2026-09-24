@@ -4,7 +4,8 @@ A simple Edge-Cloud simulation for municipal waste-bin monitoring and pickup opt
 
 ## Components
 
-- `device.py`: simulates bins and periodically emits fill readings.
+- `device/`: sensor-device folder that generates and prints periodic random
+  bin-fill readings.
 - `gateway.py`: establishes an ML-KEM session, decrypts, validates, and forwards readings.
 - `crypto.py`: ML-KEM-768 key exchange and AES-GCM session encryption.
 - `cloud.py`: stores readings through a callback and alerts above 80%.
@@ -15,8 +16,11 @@ A simple Edge-Cloud simulation for municipal waste-bin monitoring and pickup opt
 ```powershell
 python -m pip install -r requirements-dev.txt
 pytest
-python main.py
+python device/main.py
 ```
+
+Set `device/.env` from `device/.env.example` to configure
+`DEVICE_INTERVAL_SECONDS` (default `15`).
 
 ### Format & Lint
 
