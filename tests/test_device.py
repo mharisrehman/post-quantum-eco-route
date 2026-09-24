@@ -2,7 +2,9 @@ from device import DeviceSimulator, WasteBin
 
 
 def test_simulator_emits_each_bin_for_each_cycle() -> None:
-    simulator = DeviceSimulator([WasteBin("a"), WasteBin("b")], interval_seconds=0)
+    simulator = DeviceSimulator(
+        [WasteBin("a"), WasteBin("b")], interval_seconds=0
+    )
 
     readings = list(simulator.readings(cycles=2))
 

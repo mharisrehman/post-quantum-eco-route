@@ -17,7 +17,9 @@ class Database:
         try:
             import psycopg
         except ImportError as exc:
-            raise RuntimeError("Install psycopg[binary] to use PostgreSQL") from exc
+            raise RuntimeError(
+                "Install psycopg[binary] to use PostgreSQL"
+            ) from exc
         return psycopg.connect(self.dsn)
 
     def initialize(self) -> None:

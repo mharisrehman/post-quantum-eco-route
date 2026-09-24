@@ -7,7 +7,9 @@ from models import BinReading
 
 
 class Gateway:
-    def __init__(self, forward: Callable[[BinReading], str | None], session: MlKemSession) -> None:
+    def __init__(
+        self, forward: Callable[[BinReading], str | None], session: MlKemSession
+    ) -> None:
         self._forward = forward
         self._session = session
 

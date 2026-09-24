@@ -13,9 +13,20 @@ A simple Edge-Cloud simulation for municipal waste-bin monitoring and pickup opt
 ## Local development
 
 ```powershell
-python -m pip install -r requirements.txt
+python -m pip install -r requirements-dev.txt
 pytest
 python main.py
+```
+
+### Format & Lint
+
+After finishing a task / feature / addition, run the following commands from project root to catch bad conventions and errors. Formatter then adjusts whitespace and line breaks so that style is consistent between contributors.
+
+As a good convention, it's recommended to setup the formatter as an automatic code-action that is ran on save within your editor.
+
+```powershell
+ruff check .
+ruff format .
 ```
 
 ## Docker Compose
