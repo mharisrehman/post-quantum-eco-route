@@ -4,6 +4,17 @@ import json
 
 
 @dataclass(frozen=True)
+class Bin:
+    bin_id: str
+
+    @classmethod
+    def create(cls, bin_id: str) -> "Bin":
+        if not bin_id:
+            raise ValueError("bin_id is required")
+        return cls(bin_id=bin_id)
+
+
+@dataclass(frozen=True)
 class BinReading:
     bin_id: str
     fill_level: int
