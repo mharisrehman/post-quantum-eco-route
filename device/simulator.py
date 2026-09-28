@@ -1,4 +1,4 @@
-"""Sensor device simulator that generates random bin measurements."""
+"""Sensor device simulator that generates increasing bin measurements."""
 
 from __future__ import annotations
 
@@ -37,11 +37,13 @@ class DeviceSimulator:
         self._waste_bin = waste_bin
         self._interval_seconds = interval_seconds
         self._sleep = sleep
+        self._fill_level = 0
 
     def generate_reading(self) -> BinReading:
+        self._fill_level = min(self._fill_level + random.randint(1, 5), 100)
         return BinReading.create(
             bin_id=self._waste_bin.bin_id,
-            fill_level=random.randint(0, 100),
+            fill_level=self._fill_level,
         )
 
     def run(self, emit: Callable[[BinReading], None]) -> None:
