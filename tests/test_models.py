@@ -1,6 +1,6 @@
 import pytest
 
-from models import BinReading
+from models import Bin, BinReading
 
 
 def test_reading_round_trips_as_json() -> None:
@@ -12,3 +12,8 @@ def test_reading_round_trips_as_json() -> None:
 def test_reading_rejects_invalid_fill_level() -> None:
     with pytest.raises(ValueError):
         BinReading.create("bin-1", 101)
+
+
+def test_bin_requires_bin_id() -> None:
+    with pytest.raises(ValueError):
+        Bin.create("")
