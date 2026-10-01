@@ -21,6 +21,8 @@ python device/main.py
 
 Set `device/.env` from `device/.env.example` to configure
 `DEVICE_INTERVAL_SECONDS` (default `15`).
+Set `cloud/.env` from `cloud/.env.example` to configure
+database initialization values. 
 
 ### Format & Lint
 

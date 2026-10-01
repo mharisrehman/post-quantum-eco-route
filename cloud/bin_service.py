@@ -1,6 +1,13 @@
 """Business logic for managing known bin devices."""
 
-from models import Bin
+import sys
+from pathlib import Path
+
+try:
+    from models import Bin
+except ModuleNotFoundError:
+    sys.path.append(str(Path(__file__).resolve().parents[1]))
+    from models import Bin
 
 
 class BinService:

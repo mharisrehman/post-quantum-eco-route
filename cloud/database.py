@@ -1,9 +1,15 @@
 """PostgreSQL persistence adapter."""
 
 from contextlib import closing
+from pathlib import Path
+import sys
 from typing import Any
 
-from models import BinReading
+try:
+    from models import BinReading
+except ModuleNotFoundError:
+    sys.path.append(str(Path(__file__).resolve().parents[1]))
+    from models import BinReading
 
 
 class Database:
