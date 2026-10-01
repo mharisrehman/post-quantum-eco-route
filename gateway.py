@@ -8,9 +8,7 @@ from models import BinReading
 
 
 class Gateway:
-    def __init__(
-        self, forward: Callable[[BinReading], str | None]
-    ) -> None:
+    def __init__(self, forward: Callable[[BinReading], str | None]) -> None:
         self._forward = forward
 
     def receive(self, message: str) -> str | None:
