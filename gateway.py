@@ -1,5 +1,7 @@
 """Edge gateway for secure validation and forwarding."""
 
+import base64
+import binascii
 from collections.abc import Callable
 
 from models import BinReading
@@ -7,20 +9,14 @@ from models import BinReading
 
 class Gateway:
     def __init__(
-        self, forward: Callable[[BinReading], str | None], session: None
+        self, forward: Callable[[BinReading], str | None]
     ) -> None:
         self._forward = forward
-        self._session = session
 
-    def establish_session(self, device_session: None) -> None:
-        return
-        # public_key = self._session.create_keypair()
-        # ciphertext, gateway_secret = device_session.encapsulate(public_key)
-        # self._session.set_session_key(gateway_secret)
-        # device_session.set_session_key(gateway_secret)
-
-    def receive(self, message: None) -> str | None:
-        return
-
-        reading = BinReading.from_bytes(self._session.decrypt(message))
+    def receive(self, message: str) -> str | None:
+        try:
+            payload = base64.b64decode(message, validate=True)
+        except (binascii.Error, ValueError) as exc:
+            raise ValueError("message must be valid Base64") from exc
+        reading = BinReading.from_bytes(payload)
         return self._forward(reading)

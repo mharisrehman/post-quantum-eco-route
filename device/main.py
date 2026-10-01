@@ -5,7 +5,9 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from simulator import Device
+from simulator import DeviceSimulator, WasteBin
+from gateway import Gateway
+from sender import Base64Sender
 
 DEFAULT_INTERVAL_SECONDS = 5
 ENV_INTERVAL_KEY = "DEVICE_INTERVAL_SECONDS"
@@ -33,7 +35,12 @@ def main() -> None:
         os.getenv(ENV_INTERVAL_KEY, str(DEFAULT_INTERVAL_SECONDS))
     )
     bin_id = os.getenv(ENV_BIN_ID_KEY, "bin-1")
-    Device(bin_id=bin_id, interval_seconds=interval_seconds).run()
+    gateway = Gateway(forward=print)
+    sender = Base64Sender(send=gateway.receive)
+    simulator = DeviceSimulator(
+        waste_bin=WasteBin(bin_id), interval_seconds=interval_seconds
+    )
+    simulator.run(sender.send_reading)
 
 
 if __name__ == "__main__":
