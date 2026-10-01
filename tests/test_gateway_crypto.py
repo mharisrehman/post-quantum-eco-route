@@ -2,9 +2,14 @@ import base64
 
 import pytest
 
+from device.sender import Base64Sender as DeviceBase64Sender
 from gateway import Gateway
 from models import BinReading
 from sender import Base64Sender
+
+
+def test_device_sender_compatibility_import() -> None:
+    assert DeviceBase64Sender is Base64Sender
 
 
 def test_sender_and_gateway_round_trip_reading() -> None:
