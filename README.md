@@ -20,7 +20,9 @@ python device/main.py
 ```
 
 Set `device/.env` from `device/.env.example` to configure
-`DEVICE_INTERVAL_SECONDS` (default `15`).
+`DEVICE_INTERVAL_SECONDS` (default `15`) and `DEVICE_BIN_IDS` (comma-separated
+bin IDs; defaults to `bin-1,bin-2,bin-3`). If `DEVICE_BIN_IDS` is unset,
+`DEVICE_BIN_ID` can select a single device.
 
 ### Format & Lint
 
