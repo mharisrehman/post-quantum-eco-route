@@ -2,9 +2,9 @@ import base64
 
 import pytest
 
-from device.sender import Base64Sender
 from gateway import Gateway
 from models import BinReading
+from sender import Base64Sender
 
 
 def test_sender_and_gateway_round_trip_reading() -> None:
