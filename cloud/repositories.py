@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from models import Bin, BinReading
+from models import Alert, Bin, BinReading
 
 from cloud.database import Database
 
@@ -89,6 +89,51 @@ class BinReadingRepository:
                 bin_id=row[1],
                 fill_level=row[2],
                 recorded_at=row[3],
+            )
+            for row in rows
+        ]
+
+
+class AlertRepository:
+    def __init__(self, database: Database | None = None) -> None:
+        self._database = database or Database.instance()
+
+    def create(self, alert: Alert) -> Alert:
+        connection = self._database.connection()
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                INSERT INTO alerts (bin_id, fill_level, raised_at)
+                VALUES (%s, %s, %s)
+                RETURNING id
+                """,
+                (alert.bin_id, alert.fill_level, alert.raised_at),
+            )
+            row: Any = cursor.fetchone()
+        connection.commit()
+        return Alert(
+            bin_id=alert.bin_id,
+            fill_level=alert.fill_level,
+            raised_at=alert.raised_at,
+            id=row[0],
+        )
+
+    def get_all(self) -> list[Alert]:
+        connection = self._database.connection()
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT id, bin_id, fill_level, raised_at
+                FROM alerts ORDER BY raised_at, id
+                """
+            )
+            rows = cursor.fetchall()
+        return [
+            Alert(
+                id=row[0],
+                bin_id=row[1],
+                fill_level=row[2],
+                raised_at=row[3],
             )
             for row in rows
         ]

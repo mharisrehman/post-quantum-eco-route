@@ -13,7 +13,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from cloud.bin_service import BinService
 from cloud.database import Database
 from cloud.measurement_service import MeasurementService
-from models import Bin, BinReading
+from models import Alert, Bin, BinReading
 
 
 def _database_dsn() -> str:
@@ -82,6 +82,15 @@ class ReadingResponse(BaseModel):
     recorded_at: str
 
 
+class AlertResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int | None = None
+    bin_id: str
+    fill_level: int
+    raised_at: str
+
+
 def _bin_service(request: Request) -> BinService:
     return request.app.state.bin_service
 
@@ -134,6 +143,11 @@ def delete_bin(bin_id: str, request: Request) -> Bin:
 @app.get("/readings", response_model=list[ReadingResponse])
 def list_readings(request: Request) -> list[BinReading]:
     return _measurement_service(request).get_measurements()
+
+
+@app.get("/alerts", response_model=list[AlertResponse])
+def list_alerts(request: Request) -> list[Alert]:
+    return _measurement_service(request).get_alerts()
 
 
 @app.post(

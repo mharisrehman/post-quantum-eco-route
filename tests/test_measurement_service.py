@@ -3,8 +3,8 @@ from unittest.mock import Mock, patch
 import pytest
 
 from cloud import MeasurementService
-from cloud.repositories import BinReadingRepository
-from models import BinReading
+from cloud.repositories import AlertRepository, BinReadingRepository
+from models import Alert, BinReading
 
 
 @pytest.fixture
@@ -70,3 +70,45 @@ def test_get_measurements_reads_from_repository(repository: Mock) -> None:
 
     assert service.get_measurements() == readings
     repository.get_all.assert_called_once_with()
+
+
+@pytest.mark.parametrize("fill_level", [80])
+def test_save_measurement_does_not_raise_alert_at_threshold(
+    repository: Mock,
+    fill_level: int,
+) -> None:
+    alert_repository = Mock(spec=AlertRepository)
+    repository.create.return_value = BinReading(
+        "bin-1", fill_level, "now", id=1
+    )
+    service = MeasurementService(repository, alert_repository)
+
+    with patch(
+        "cloud.measurement_service.BinRepository",
+        autospec=True,
+    ) as bin_repository:
+        bin_repository.return_value.get.return_value = object()
+        service.save_measurement(BinReading("bin-1", fill_level, "now"))
+
+    alert_repository.create.assert_not_called()
+
+
+def test_save_measurement_persists_alert_above_threshold(
+    repository: Mock,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    alert_repository = Mock(spec=AlertRepository)
+    repository.create.return_value = BinReading("bin-1", 81, "now", id=1)
+    service = MeasurementService(repository, alert_repository)
+
+    with patch(
+        "cloud.measurement_service.BinRepository",
+        autospec=True,
+    ) as bin_repository:
+        bin_repository.return_value.get.return_value = object()
+        service.save_measurement(BinReading("bin-1", 81, "now"))
+
+    alert_repository.create.assert_called_once()
+    alert = alert_repository.create.call_args.args[0]
+    assert alert == Alert("bin-1", 81, alert.raised_at)
+    assert "Alert raised for bin 'bin-1': fill level is 81%" in caplog.text

@@ -39,6 +39,7 @@ The API exposes OpenAPI documentation at `http://localhost:8000/docs`.
 - `GET|POST /bins`
 - `GET|DELETE /bins/{bin_id}`
 - `GET|POST /readings`
+- `GET /alerts` (fill levels above 80%)
 
 For cloud deployment, set `DATABASE_URL` to the provider's PostgreSQL
 connection string. The container listens on the provider's `PORT` value

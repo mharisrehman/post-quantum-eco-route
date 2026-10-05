@@ -63,6 +63,16 @@ class Database:
                 )
                 """
             )
+            cursor.execute(
+                """
+                CREATE TABLE IF NOT EXISTS alerts (
+                    id BIGSERIAL PRIMARY KEY,
+                    bin_id TEXT NOT NULL,
+                    fill_level INTEGER NOT NULL CHECK (fill_level BETWEEN 0 AND 100),
+                    raised_at TIMESTAMPTZ NOT NULL
+                )
+                """
+            )
         connection.commit()
 
     def close(self) -> None:
