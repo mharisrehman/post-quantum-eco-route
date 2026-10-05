@@ -24,6 +24,7 @@ python device/main.py
 Set `device/.env` from `device/.env.example` to configure
 `DEVICE_INTERVAL_SECONDS` (default `15`).
 Set `cloud/.env` from `cloud/.env.example` to configure database values.
+Database initialization creates `bin-1`, `bin-2`, and `bin-3` by default.
 
 ## REST API
 

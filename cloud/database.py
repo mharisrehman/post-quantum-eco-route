@@ -3,6 +3,9 @@
 from typing import Any
 
 
+DEFAULT_BIN_IDS = ("bin-1", "bin-2", "bin-3")
+
+
 class Database:
     _instance: "Database | None" = None
 
@@ -53,6 +56,14 @@ class Database:
                 )
                 """
             )
+            for bin_id in DEFAULT_BIN_IDS:
+                cursor.execute(
+                    """
+                    INSERT INTO bins (bin_id) VALUES (%s)
+                    ON CONFLICT (bin_id) DO NOTHING
+                    """,
+                    (bin_id,),
+                )
             cursor.execute(
                 """
                 CREATE TABLE IF NOT EXISTS bin_readings (
