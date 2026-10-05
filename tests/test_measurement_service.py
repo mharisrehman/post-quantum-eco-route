@@ -1,31 +1,72 @@
+from unittest.mock import Mock, patch
+
 import pytest
 
 from cloud import MeasurementService
-from models import Bin, BinReading
+from cloud.repositories import BinReadingRepository
+from models import BinReading
 
 
-def test_save_measurement_adds_reading_to_in_memory_list() -> None:
-    service = MeasurementService(known_bins=[Bin(bin_id="bin-1")])
+@pytest.fixture
+def repository() -> Mock:
+    repository = Mock(spec=BinReadingRepository)
+    repository._database = Mock()
+    return repository
+
+
+def test_save_measurement_persists_known_reading(repository: Mock) -> None:
     reading = BinReading("bin-1", 50, "now")
+    saved = BinReading("bin-1", 50, "now", id=7)
+    repository.create.return_value = saved
+    service = MeasurementService(repository)
 
-    saved = service.save_measurement(reading)
+    with patch(
+        "cloud.measurement_service.BinRepository",
+        autospec=True,
+    ) as bin_repository:
+        bin_repository.return_value.get.return_value = object()
 
-    assert saved == reading
-    assert service.get_measurements() == [reading]
+        assert service.save_measurement(reading) == saved
 
-
-def test_is_known_device_matches_reading_bin_id() -> None:
-    service = MeasurementService(known_bins=[Bin(bin_id="bin-1")])
-
-    assert service.is_known_device(BinReading("bin-1", 50, "now"))
-    assert not service.is_known_device(BinReading("bin-missing", 50, "now"))
+    repository.create.assert_called_once_with(reading)
 
 
-def test_save_measurement_rejects_unknown_device() -> None:
-    service = MeasurementService(known_bins=[Bin(bin_id="bin-1")])
-    reading = BinReading("bin-missing", 50, "now")
+def test_save_measurement_rejects_unknown_device(repository: Mock) -> None:
+    reading = BinReading("missing-bin", 50, "now")
+    service = MeasurementService(repository)
 
-    with pytest.raises(ValueError, match="unknown bin device"):
-        service.save_measurement(reading)
+    with patch(
+        "cloud.measurement_service.BinRepository",
+        autospec=True,
+    ) as bin_repository:
+        bin_repository.return_value.get.return_value = None
 
-    assert service.get_measurements() == []
+        with pytest.raises(ValueError, match="unknown bin device"):
+            service.save_measurement(reading)
+
+    repository.create.assert_not_called()
+
+
+def test_is_known_device_queries_bin_repository(repository: Mock) -> None:
+    reading = BinReading("bin-1", 50, "now")
+    service = MeasurementService(repository)
+
+    with patch(
+        "cloud.measurement_service.BinRepository",
+        autospec=True,
+    ) as bin_repository:
+        bin_repository.return_value.get.return_value = object()
+
+        assert service.is_known_device(reading)
+
+    bin_repository.assert_called_once_with(repository._database)
+    bin_repository.return_value.get.assert_called_once_with("bin-1")
+
+
+def test_get_measurements_reads_from_repository(repository: Mock) -> None:
+    readings = [BinReading("bin-1", 50, "now", id=3)]
+    repository.get_all.return_value = readings
+    service = MeasurementService(repository)
+
+    assert service.get_measurements() == readings
+    repository.get_all.assert_called_once_with()

@@ -1,45 +1,62 @@
+from unittest.mock import Mock
+
 import pytest
 
 from cloud import BinService
+from cloud.repositories import BinRepository
 from models import Bin
 
 
-def test_create_bin_adds_bin_to_in_memory_list() -> None:
-    service = BinService()
+@pytest.fixture
+def repository() -> Mock:
+    return Mock(spec=BinRepository)
+
+
+def test_create_bin_persists_bin(repository: Mock) -> None:
+    bin = Bin(bin_id="bin-1")
+    repository.get.return_value = None
+    repository.create.return_value = bin
+    service = BinService(repository)
 
     created = service.create_bin("bin-1")
 
-    assert created == Bin(bin_id="bin-1")
-    assert service.get_bins() == [Bin(bin_id="bin-1")]
+    assert created == bin
+    repository.get.assert_called_once_with("bin-1")
+    repository.create.assert_called_once_with(bin)
 
 
-def test_create_bin_rejects_missing_bin_id() -> None:
-    service = BinService()
+def test_create_bin_rejects_duplicate(repository: Mock) -> None:
+    repository.get.return_value = Bin(bin_id="bin-1")
+    service = BinService(repository)
 
-    with pytest.raises(ValueError, match="bin_id is required"):
-        service.create_bin("")
+    with pytest.raises(ValueError, match="bin already exists"):
+        service.create_bin("bin-1")
 
-
-def test_get_bin_returns_matching_bin_or_none() -> None:
-    service = BinService([Bin(bin_id="bin-1")])
-
-    assert service.get_bin("bin-1") == Bin(bin_id="bin-1")
-    assert service.get_bin("bin-missing") is None
+    repository.create.assert_not_called()
 
 
-def test_delete_bin_removes_existing_bin() -> None:
-    service = BinService([Bin(bin_id="bin-1"), Bin(bin_id="bin-2")])
+def test_get_bins_reads_from_repository(repository: Mock) -> None:
+    bins = [Bin(bin_id="bin-1"), Bin(bin_id="bin-2")]
+    repository.get_all.return_value = bins
+    service = BinService(repository)
 
-    deleted = service.delete_bin("bin-1")
-
-    assert deleted == Bin(bin_id="bin-1")
-    assert service.get_bins() == [Bin(bin_id="bin-2")]
+    assert service.get_bins() == bins
+    repository.get_all.assert_called_once_with()
 
 
-def test_delete_bin_returns_none_when_missing() -> None:
-    service = BinService([Bin(bin_id="bin-1")])
+def test_get_bin_reads_from_repository(repository: Mock) -> None:
+    bin = Bin(bin_id="bin-1")
+    repository.get.return_value = bin
+    service = BinService(repository)
 
-    deleted = service.delete_bin("bin-missing")
+    assert service.get_bin("bin-1") == bin
+    repository.get.assert_called_once_with("bin-1")
 
-    assert deleted is None
-    assert service.get_bins() == [Bin(bin_id="bin-1")]
+
+def test_delete_bin_deletes_from_repository(repository: Mock) -> None:
+    bin = Bin(bin_id="bin-1")
+    repository.delete.return_value = bin
+    service = BinService(repository)
+
+    assert service.delete_bin("bin-1") == bin
+    repository.delete.assert_called_once_with("bin-1")

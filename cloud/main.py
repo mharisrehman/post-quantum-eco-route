@@ -4,8 +4,11 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+import sys
 
-from database import Database
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from cloud.database import Database
 
 ENV_DB_DSN_KEY = "CLOUD_DB_DSN"
 ENV_DB_NAME_KEY = "POSTGRES_DB"

@@ -19,6 +19,7 @@ class BinReading:
     bin_id: str
     fill_level: int
     recorded_at: str
+    id: int | None = None
 
     @classmethod
     def create(cls, bin_id: str, fill_level: int) -> "BinReading":
@@ -39,4 +40,5 @@ class BinReading:
             bin_id=validated.bin_id,
             fill_level=validated.fill_level,
             recorded_at=data["recorded_at"],
+            id=data.get("id"),
         )

@@ -8,8 +8,9 @@ A simple Edge-Cloud simulation for municipal waste-bin monitoring and pickup opt
   bin-fill readings.
 - `gateway.py`: establishes an ML-KEM session, decrypts, validates, and forwards readings.
 - `crypto.py`: ML-KEM-768 key exchange and AES-GCM session encryption.
-- `cloud/`: in-memory cloud CRUD services with bin registration.
-- `database.py`: PostgreSQL schema and insert adapter.
+- `cloud/`: PostgreSQL-backed cloud CRUD services with bin registration.
+- `cloud/database.py`: singleton PostgreSQL connection and schema adapter.
+- `cloud/repositories.py`: persistence repositories used by cloud services.
 
 ## Local development
 
