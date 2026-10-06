@@ -4,8 +4,7 @@ A simple Edge-Cloud simulation for municipal waste-bin monitoring and pickup opt
 
 ## Components
 
-- `device/`: sensor-device folder that generates periodic readings for multiple
-  bins and sends them to the cloud API.
+- `device/`: sensor-device folder that generates periodic readings for multiple bins and sends them to the cloud API.
 - `gateway.py`: HTTP edge gateway that accepts JSON or Base64-encoded readings and forwards them to the cloud API.
 - `ml-kem_crypto.py`: ML-KEM-768 key exchange and AES-GCM session encryption primitives.
 - `cloud/`: PostgreSQL-backed cloud CRUD services and FastAPI REST API.
