@@ -53,7 +53,7 @@ class DeviceSimulator:
 
 
 class DeviceFleet:
-    """Run multiple independent bin simulators on a shared interval."""
+    """Runs multiple independent bin simulators on a shared interval."""
 
     def __init__(
         self,
@@ -85,9 +85,7 @@ class Device:
     """Single-unit device facade for main loop execution."""
 
     def __init__(self, bin_id: str, interval_seconds: int) -> None:
-        self._simulator = DeviceSimulator(
-            waste_bin=WasteBin(bin_id), interval_seconds=interval_seconds
-        )
+        self._fleet = DeviceFleet([bin_id], interval_seconds=interval_seconds)
 
     def run(self) -> None:
-        self._simulator.run(print)
+        self._fleet.run(print)

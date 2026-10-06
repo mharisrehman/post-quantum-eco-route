@@ -4,23 +4,66 @@ A simple Edge-Cloud simulation for municipal waste-bin monitoring and pickup opt
 
 ## Components
 
-- `device/`: sensor-device folder that generates and prints periodic random
-  bin-fill readings.
-- `gateway.py`: establishes an ML-KEM session, decrypts, validates, and forwards readings.
-- `crypto.py`: ML-KEM-768 key exchange and AES-GCM session encryption.
-- `cloud.py`: stores readings through a callback and alerts above 80%.
-- `database.py`: PostgreSQL schema and insert adapter.
+- `device/`: sensor-device folder that generates periodic readings for multiple
+  bins and sends them to the cloud API.
+- `gateway.py`: HTTP edge gateway that accepts JSON or Base64-encoded readings and forwards them to the cloud API.
+- `ml-kem_crypto.py`: ML-KEM-768 key exchange and AES-GCM session encryption primitives.
+- `cloud/`: PostgreSQL-backed cloud CRUD services and FastAPI REST API.
+- `cloud/api.py`: HTTP API for bin registration and measurement ingestion.
+- `cloud/database.py`: singleton PostgreSQL connection and schema adapter.
+- `cloud/repositories.py`: persistence repositories used by cloud services.
 
 ## Local development
 
 ```powershell
 python -m pip install -r requirements-dev.txt
 pytest
-python device/main.py
 ```
 
 Set `device/.env` from `device/.env.example` to configure
-`DEVICE_INTERVAL_SECONDS` (default `15`).
+`DEVICE_INTERVAL_SECONDS` (default `5`; the example sets `15`),
+`DEVICE_BIN_IDS` (comma-separated
+bin IDs; defaults to `bin-1,bin-2,bin-3`), and `CLOUD_API_URL` (default
+`http://localhost:8000`). If `DEVICE_BIN_IDS` is unset, `DEVICE_BIN_ID` can
+select a single device.
+Database initialization creates `bin-1`, `bin-2`, and `bin-3` by default.
+
+## REST API
+
+Start PostgreSQL and the API using the project Compose configuration:
+
+```powershell
+docker compose up --build postgres api
+```
+
+The API exposes OpenAPI documentation at `http://localhost:8000/docs`.
+With the API running, start the simulator in another terminal:
+
+```powershell
+python -m device.main
+```
+
+The gateway listens at `http://localhost:8001`. It accepts the simulator's
+normal JSON `POST /readings` request or a Base64 JSON envelope:
+
+```json
+{"payload_b64":"eyJiaW5faWQiOiJiaW4tMSIsImZpbGxfbGV2ZWwiOjQyfQ=="}
+```
+
+The Base64 value must decode to a JSON reading (for example,
+`{"bin_id":"bin-1","fill_level":42}`). The gateway decodes and validates the
+reading, then forwards JSON to the cloud API. Base64 is an encoding, not
+encryption; the gateway does not currently establish an ML-KEM session.
+
+- `GET /healthz`
+- `GET|POST /bins`
+- `GET|DELETE /bins/{bin_id}`
+- `GET|POST /readings`
+- `GET /alerts` (fill levels above 80%)
+
+For cloud deployment, set `DATABASE_URL` to the provider's PostgreSQL
+connection string. The container listens on the provider's `PORT` value
+(defaulting to `8000` locally).
 
 ### Format & Lint
 
@@ -39,4 +82,10 @@ ruff format .
 docker compose up --build
 ```
 
-The project is intentionally a simulation without network servers. Production deployment should add device identity, replay protection, authenticated transport, secret management, and operational routing logic.
+Compose starts PostgreSQL, the cloud API, the gateway, and the device
+simulator. The simulator posts readings to the gateway, which forwards them to
+the cloud API. View stored readings at
+`GET /readings` and alerts at `GET /alerts`.
+
+Production deployment should still add device identity, replay protection,
+authenticated transport, secret management, and operational routing logic.
