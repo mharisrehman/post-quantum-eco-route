@@ -19,6 +19,7 @@ class BinReading:
     bin_id: str
     fill_level: int
     recorded_at: str
+    id: int | None = None
 
     @classmethod
     def create(cls, bin_id: str, fill_level: int) -> "BinReading":
@@ -39,4 +40,21 @@ class BinReading:
             bin_id=validated.bin_id,
             fill_level=validated.fill_level,
             recorded_at=data["recorded_at"],
+            id=data.get("id"),
         )
+
+
+@dataclass(frozen=True)
+class Alert:
+    bin_id: str
+    fill_level: int
+    raised_at: str
+    id: int | None = None
+
+    @classmethod
+    def create(cls, bin_id: str, fill_level: int) -> "Alert":
+        if not bin_id:
+            raise ValueError("bin_id is required")
+        if not 0 <= fill_level <= 100:
+            raise ValueError("fill_level must be between 0 and 100")
+        return cls(bin_id, fill_level, datetime.now(timezone.utc).isoformat())
