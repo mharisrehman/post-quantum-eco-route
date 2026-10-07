@@ -88,7 +88,7 @@ class BinReadingRepository:
                 id=row[0],
                 bin_id=row[1],
                 fill_level=row[2],
-                recorded_at=row[3],
+                recorded_at=row[3].isoformat(),
             )
             for row in rows
         ]
@@ -133,7 +133,7 @@ class AlertRepository:
                 id=row[0],
                 bin_id=row[1],
                 fill_level=row[2],
-                raised_at=row[3],
+                raised_at=row[3].isoformat(),
             )
             for row in rows
         ]
