@@ -169,15 +169,13 @@ def test_create_reading_accepts_base64_json_envelope(
     _, measurement_service = services
     saved = BinReading("bin-1", 75, "2026-01-01T00:00:00+00:00", id=3)
     measurement_service.save_measurement.return_value = saved
-    reading_json = json.dumps(
-        {"bin_id": "bin-1", "fill_level": 75}
-    ).encode("utf-8")
+    reading_json = json.dumps({"bin_id": "bin-1", "fill_level": 75}).encode(
+        "utf-8"
+    )
 
     response = client.post(
         "/readings",
-        json={
-            "payload_b64": base64.b64encode(reading_json).decode("ascii")
-        },
+        json={"payload_b64": base64.b64encode(reading_json).decode("ascii")},
     )
 
     assert response.status_code == 201

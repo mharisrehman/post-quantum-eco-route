@@ -14,7 +14,9 @@ def test_publish_reading_posts_base64_json_to_gateway() -> None:
     response.__enter__ = Mock(return_value=response)
     response.__exit__ = Mock(return_value=None)
 
-    with patch("device.device_service.urlopen", return_value=response) as urlopen:
+    with patch(
+        "device.device_service.urlopen", return_value=response
+    ) as urlopen:
         DeviceService("http://gateway:8001/").publish_reading(
             BinReading("bin-1", 42, "now")
         )
