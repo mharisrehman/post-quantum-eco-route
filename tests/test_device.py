@@ -1,0 +1,72 @@
+import pytest
+
+from device.simulator import DeviceFleet, DeviceSimulator, WasteBin
+
+
+class StopSimulationError(Exception):
+    pass
+
+
+def test_simulator_sleeps_then_emits_reading_in_loop() -> None:
+    intervals: list[float] = []
+    readings = []
+
+    def fake_sleep(seconds: float) -> None:
+        intervals.append(seconds)
+
+    def emit(reading) -> None:
+        readings.append(reading)
+        if len(readings) == 2:
+            raise StopSimulationError
+
+    simulator = DeviceSimulator(
+        waste_bin=WasteBin("a"), interval_seconds=7, sleep=fake_sleep
+    )
+
+    with pytest.raises(StopSimulationError):
+        simulator.run(emit)
+
+    assert intervals == [7, 7]
+    assert len(readings) == 2
+    assert all(reading.bin_id == "a" for reading in readings)
+    assert all(0 <= reading.fill_level <= 100 for reading in readings)
+
+
+def test_generated_fill_level_does_not_exceed_100(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("device.simulator.random.randint", lambda *_args: 5)
+    simulator = DeviceSimulator(waste_bin=WasteBin("a"))
+
+    fill_levels = [simulator.generate_reading().fill_level for _ in range(21)]
+
+    assert all(level <= 100 for level in fill_levels)
+
+
+def test_fleet_emits_readings_for_each_bin() -> None:
+    intervals: list[float] = []
+    readings = []
+
+    def fake_sleep(seconds: float) -> None:
+        intervals.append(seconds)
+
+    def emit(reading) -> None:
+        readings.append(reading)
+        if len(readings) == 3:
+            raise StopSimulationError
+
+    fleet = DeviceFleet(
+        ["bin-1", "bin-2", "bin-3"],
+        interval_seconds=9,
+        sleep=fake_sleep,
+    )
+
+    with pytest.raises(StopSimulationError):
+        fleet.run(emit)
+
+    assert [reading.bin_id for reading in readings] == [
+        "bin-1",
+        "bin-2",
+        "bin-3",
+    ]
+    assert intervals == [3, 3, 3]

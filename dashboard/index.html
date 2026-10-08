@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#173a35" />
+    <title>Eco Route | Bin Operations</title>
+    <link rel="stylesheet" href="/dashboard/static/styles.css" />
+    <script src="/dashboard/static/app.js" defer></script>
+  </head>
+  <body>
+    <header class="topbar">
+      <a class="brand" href="/dashboard" aria-label="Eco Route dashboard">
+        <span class="brand-mark" aria-hidden="true">ER</span>
+        <span class="brand-copy">
+          <strong>Eco Route</strong>
+          <span>Bin operations</span>
+        </span>
+      </a>
+      <div class="topbar-tools">
+        <div class="system-state" id="system-state" data-state="loading">
+          <span class="state-dot" aria-hidden="true"></span>
+          <span id="system-state-label">Connecting</span>
+        </div>
+        <span class="updated-at" id="updated-at">Waiting for data</span>
+        <button class="refresh-button" id="refresh-button" type="button">
+          Refresh
+        </button>
+      </div>
+    </header>
+
+    <main class="page-shell">
+      <section class="page-intro">
+        <div>
+          <p class="eyebrow">Municipal services / live view</p>
+          <h1>Bin network</h1>
+          <p class="intro-copy">
+            Readings and alerts received by the cloud service.
+          </p>
+        </div>
+        <div class="intro-meta">
+          <div class="base64-banner" role="status">
+            <span class="base64-mark" aria-hidden="true">B64</span>
+            <span>Running with Base64</span>
+          </div>
+          <div class="refresh-note">
+            <span class="pulse-dot" aria-hidden="true"></span>
+            Refreshes every 5 seconds
+          </div>
+        </div>
+      </section>
+
+      <section class="metric-grid" aria-label="Network summary">
+        <article class="metric">
+          <span class="metric-label">Registered bins</span>
+          <strong class="metric-value" id="bin-count">--</strong>
+          <span class="metric-foot">In the cloud registry</span>
+        </article>
+        <article class="metric">
+          <span class="metric-label">Readings received</span>
+          <strong class="metric-value" id="reading-count">--</strong>
+          <span class="metric-foot">Stored measurements</span>
+        </article>
+        <article class="metric">
+          <span class="metric-label">Average fill</span>
+          <strong class="metric-value" id="average-fill">--</strong>
+          <span class="metric-foot">Latest reading per bin</span>
+        </article>
+        <article class="metric metric-alerts">
+          <span class="metric-label">Alerts raised</span>
+          <strong class="metric-value" id="alert-count">--</strong>
+          <span class="metric-foot">Fill level above 80%</span>
+        </article>
+      </section>
+
+      <section class="panel pipeline-panel" aria-labelledby="pipeline-title">
+        <div class="panel-heading">
+          <div>
+            <p class="eyebrow">Reading path</p>
+            <h2 id="pipeline-title">System pipeline</h2>
+          </div>
+          <span class="panel-note">Latest stored reading confirms delivery</span>
+        </div>
+        <ol class="pipeline-list">
+          <li class="pipeline-step">
+            <span class="step-index">01</span>
+            <strong>Bin device</strong>
+            <span>Generate reading</span>
+          </li>
+          <li class="pipeline-step">
+            <span class="step-index">02</span>
+            <strong>Device service</strong>
+            <span>Base64 encode</span>
+          </li>
+          <li class="pipeline-step">
+            <span class="step-index">03</span>
+            <strong>Gateway</strong>
+            <span>Decode, validate, encode</span>
+          </li>
+          <li class="pipeline-step">
+            <span class="step-index">04</span>
+            <strong>Cloud service</strong>
+            <span>Decode and validate</span>
+          </li>
+          <li class="pipeline-step">
+            <span class="step-index">05</span>
+            <strong>PostgreSQL</strong>
+            <span>Store and alert</span>
+          </li>
+        </ol>
+        <p class="pipeline-footnote">
+          Base64 is a transport encoding; it is not encryption.
+        </p>
+      </section>
+
+      <section class="content-grid">
+        <article class="panel current-panel" aria-labelledby="current-title">
+          <div class="panel-heading">
+            <div>
+              <p class="eyebrow">Bin status</p>
+              <h2 id="current-title">Current reading</h2>
+            </div>
+            <label class="select-wrap" for="bin-select">
+              <span class="visually-hidden">Select a bin</span>
+              <select id="bin-select" aria-label="Select a bin">
+                <option value="">No bins available</option>
+              </select>
+            </label>
+          </div>
+          <div class="reading-summary">
+            <div class="fill-display" id="fill-display" data-level="normal">
+              <span class="fill-number" id="fill-level">--</span>
+              <span class="fill-unit">percent full</span>
+            </div>
+            <div class="reading-details">
+              <span class="status-label" id="fill-status">Waiting for readings</span>
+              <p id="reading-time">No reading received yet</p>
+              <p class="reading-meta" id="reading-meta">
+                Select a registered bin to view its latest reading.
+              </p>
+            </div>
+          </div>
+          <div class="level-track" role="img" aria-label="Bin fill level">
+            <span class="level-fill" id="level-fill"></span>
+          </div>
+          <div class="chart-heading">
+            <span>Recent fill trend</span>
+            <span id="trend-range">Latest readings</span>
+          </div>
+          <canvas
+            class="trend-chart"
+            id="trend-chart"
+            aria-label="Fill level trend for selected bin"
+            role="img"
+          ></canvas>
+          <p class="empty-message" id="reading-empty" hidden>
+            No readings for this bin yet.
+          </p>
+        </article>
+
+        <article class="panel alerts-panel" aria-labelledby="alerts-title">
+          <div class="panel-heading">
+            <div>
+              <p class="eyebrow">Needs attention</p>
+              <h2 id="alerts-title">Recent alerts</h2>
+            </div>
+            <span class="count-badge" id="visible-alert-count">0</span>
+          </div>
+          <ul class="alert-list" id="alert-list">
+            <li class="empty-message">No alerts recorded.</li>
+          </ul>
+        </article>
+      </section>
+
+      <section class="panel activity-panel" aria-labelledby="activity-title">
+        <div class="panel-heading">
+          <div>
+            <p class="eyebrow">Cloud records</p>
+            <h2 id="activity-title">Recent readings</h2>
+          </div>
+          <span class="panel-note" id="activity-count">Latest 8</span>
+        </div>
+        <div class="table-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th scope="col">Bin</th>
+                <th scope="col">Fill</th>
+                <th scope="col">Received at</th>
+                <th scope="col">Status</th>
+              </tr>
+            </thead>
+            <tbody id="reading-rows">
+              <tr>
+                <td class="table-empty" colspan="4">Waiting for readings…</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+      <p class="error-banner" id="error-banner" role="status" hidden></p>
+    </main>
+  </body>
+</html>
