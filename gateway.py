@@ -36,9 +36,13 @@ def decode_base64_payload(payload: str) -> bytes:
 
 
 def forward_to_cloud(reading: ReadingPayload) -> dict[str, object]:
+    reading_json = reading.model_dump_json(exclude_none=True).encode("utf-8")
+    payload = json.dumps(
+        {"payload_b64": base64.b64encode(reading_json).decode("ascii")}
+    ).encode("utf-8")
     request = Request(
         f"{CLOUD_API_URL}/readings",
-        data=reading.model_dump_json(exclude_none=True).encode("utf-8"),
+        data=payload,
         headers={"Content-Type": "application/json"},
         method="POST",
     )

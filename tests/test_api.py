@@ -1,3 +1,5 @@
+import base64
+import json
 from unittest.mock import Mock
 from collections.abc import Generator
 
@@ -41,6 +43,18 @@ def test_healthcheck(client: TestClient) -> None:
 
     assert response.status_code == 200
     assert response.json() == {"status": "ok"}
+
+
+def test_dashboard_serves_page_and_assets(client: TestClient) -> None:
+    page = client.get("/dashboard")
+    script = client.get("/dashboard/static/app.js")
+    stylesheet = client.get("/dashboard/static/styles.css")
+
+    assert page.status_code == 200
+    assert "Bin network" in page.text
+    assert script.status_code == 200
+    assert "refreshDashboard" in script.text
+    assert stylesheet.status_code == 200
 
 
 def test_list_bins(client: TestClient, services: tuple[Mock, Mock]) -> None:
@@ -158,6 +172,49 @@ def test_create_reading_passes_payload_to_service(
     measurement_service.save_measurement.assert_called_once_with(
         BinReading("bin-1", 75, "2026-01-01T00:00:00+00:00")
     )
+
+
+def test_create_reading_accepts_base64_json_envelope(
+    client: TestClient,
+    services: tuple[Mock, Mock],
+) -> None:
+    _, measurement_service = services
+    saved = BinReading("bin-1", 75, "2026-01-01T00:00:00+00:00", id=3)
+    measurement_service.save_measurement.return_value = saved
+    reading_json = json.dumps({"bin_id": "bin-1", "fill_level": 75}).encode(
+        "utf-8"
+    )
+
+    response = client.post(
+        "/readings",
+        json={"payload_b64": base64.b64encode(reading_json).decode("ascii")},
+    )
+
+    assert response.status_code == 201
+    assert response.json()["bin_id"] == "bin-1"
+    saved_reading = measurement_service.save_measurement.call_args.args[0]
+    assert saved_reading.bin_id == "bin-1"
+    assert saved_reading.fill_level == 75
+
+
+@pytest.mark.parametrize(
+    "payload_b64",
+    [
+        "not-base64!",
+        base64.b64encode(b"not json").decode("ascii"),
+    ],
+)
+def test_create_reading_rejects_invalid_base64_envelope(
+    client: TestClient,
+    services: tuple[Mock, Mock],
+    payload_b64: str,
+) -> None:
+    _, measurement_service = services
+
+    response = client.post("/readings", json={"payload_b64": payload_b64})
+
+    assert response.status_code == 400
+    measurement_service.save_measurement.assert_not_called()
 
 
 def test_create_reading_rejects_invalid_fill_level(

@@ -2,15 +2,14 @@
 
 from __future__ import annotations
 
-import json
 import os
 from pathlib import Path
-from typing import Protocol
-from urllib.request import Request, urlopen
 
 if __package__:
+    from .device_service import DeviceService
     from .simulator import DeviceFleet
 else:
+    from device_service import DeviceService
     from simulator import DeviceFleet
 
 DEFAULT_INTERVAL_SECONDS = 5
@@ -18,13 +17,8 @@ DEFAULT_BIN_IDS = ("bin-1", "bin-2", "bin-3")
 ENV_INTERVAL_KEY = "DEVICE_INTERVAL_SECONDS"
 ENV_BIN_ID_KEY = "DEVICE_BIN_ID"
 ENV_BIN_IDS_KEY = "DEVICE_BIN_IDS"
-DEFAULT_CLOUD_API_URL = "http://localhost:8000"
+DEFAULT_GATEWAY_URL = "http://localhost:8001"
 ENV_CLOUD_API_URL_KEY = "CLOUD_API_URL"
-
-
-class ReadingPayload(Protocol):
-    bin_id: str
-    fill_level: int
 
 
 def _load_env_file(path: Path) -> None:
@@ -52,32 +46,17 @@ def _configured_bin_ids() -> list[str]:
     return list(DEFAULT_BIN_IDS)
 
 
-def _publish_reading(reading: ReadingPayload, api_url: str) -> None:
-    request = Request(
-        f"{api_url.rstrip('/')}/readings",
-        data=json.dumps(
-            {"bin_id": reading.bin_id, "fill_level": reading.fill_level}
-        ).encode("utf-8"),
-        headers={"Content-Type": "application/json"},
-        method="POST",
-    )
-    with urlopen(request, timeout=10) as response:
-        if response.status != 201:
-            raise RuntimeError(
-                f"Cloud API returned unexpected status {response.status}"
-            )
-
-
 def main() -> None:
     device_dir = Path(__file__).parent
     _load_env_file(device_dir / ".env")
     interval_seconds = int(
         os.getenv(ENV_INTERVAL_KEY, str(DEFAULT_INTERVAL_SECONDS))
     )
-    api_url = os.getenv(ENV_CLOUD_API_URL_KEY, DEFAULT_CLOUD_API_URL)
+    gateway_url = os.getenv(ENV_CLOUD_API_URL_KEY, DEFAULT_GATEWAY_URL)
+    device_service = DeviceService(gateway_url)
     DeviceFleet(
         bin_ids=_configured_bin_ids(), interval_seconds=interval_seconds
-    ).run(lambda reading: _publish_reading(reading, api_url))
+    ).run(device_service.publish_reading)
 
 
 if __name__ == "__main__":
