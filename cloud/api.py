@@ -5,10 +5,13 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 from dataclasses import replace
 import os
+from pathlib import Path
 from typing import AsyncGenerator
 
 from fastapi import FastAPI, HTTPException, Request, status
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
 from cloud.bin_service import BinService
 from cloud.cloud_service import CloudService
@@ -56,6 +59,13 @@ app = FastAPI(
     title="Post-Quantum Eco Route API",
     version="0.1.0",
     lifespan=lifespan,
+)
+
+DASHBOARD_DIR = Path(__file__).resolve().parents[1] / "dashboard"
+app.mount(
+    "/dashboard/static",
+    StaticFiles(directory=DASHBOARD_DIR),
+    name="dashboard-static",
 )
 
 
@@ -114,6 +124,11 @@ def _cloud_service(request: Request) -> CloudService:
 @app.get("/healthz")
 def healthcheck() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.get("/dashboard", include_in_schema=False)
+def dashboard() -> FileResponse:
+    return FileResponse(DASHBOARD_DIR / "index.html")
 
 
 @app.get("/bins", response_model=list[BinResponse])

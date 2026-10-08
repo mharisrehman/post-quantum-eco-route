@@ -45,6 +45,18 @@ def test_healthcheck(client: TestClient) -> None:
     assert response.json() == {"status": "ok"}
 
 
+def test_dashboard_serves_page_and_assets(client: TestClient) -> None:
+    page = client.get("/dashboard")
+    script = client.get("/dashboard/static/app.js")
+    stylesheet = client.get("/dashboard/static/styles.css")
+
+    assert page.status_code == 200
+    assert "Bin network" in page.text
+    assert script.status_code == 200
+    assert "refreshDashboard" in script.text
+    assert stylesheet.status_code == 200
+
+
 def test_list_bins(client: TestClient, services: tuple[Mock, Mock]) -> None:
     bin_service, _ = services
     bin_service.get_bins.return_value = [Bin("bin-1")]

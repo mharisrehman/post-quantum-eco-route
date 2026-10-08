@@ -7,6 +7,7 @@ A simple Edge-Cloud simulation for municipal waste-bin monitoring and pickup opt
 - `device/`: sensor-device folder that generates periodic readings for multiple bins and sends them to the cloud API.
 - `gateway.py`: HTTP edge gateway that accepts JSON or Base64-encoded readings and forwards them to the cloud API.
 - `cloud/cloud_service.py`: decodes Base64 JSON envelopes received from the gateway.
+- `dashboard/`: live admin dashboard for bin readings, alerts, and the system pipeline.
 - `ml-kem_crypto.py`: ML-KEM-768 key exchange and AES-GCM session encryption primitives.
 - `cloud/`: PostgreSQL-backed cloud CRUD services and FastAPI REST API.
 - `cloud/api.py`: HTTP API for bin registration and measurement ingestion.
@@ -78,6 +79,17 @@ ruff format .
 ```
 
 ## Docker Compose
+
+Start the system and open the dashboard in your browser with PowerShell:
+
+```powershell
+.\dashboard\start_dashboard.ps1
+```
+
+The dashboard is served at `http://localhost:8000/dashboard`. It refreshes
+readings, bin status, and alerts every five seconds. The pipeline diagram shows
+the configured component path; detailed per-stage live progress is not yet
+instrumented.
 
 ```powershell
 docker compose up --build
