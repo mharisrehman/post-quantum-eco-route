@@ -7,9 +7,8 @@ import pytest
 from fastapi.testclient import TestClient
 
 from cloud import api
-from cloud.bin_service import BinService
+from cloud.services import BinService, MeasurementService
 from cloud.database import Database
-from cloud.measurement_service import MeasurementService
 from models import Bin, BinReading
 
 

@@ -62,6 +62,7 @@ encryption; the gateway does not currently establish an ML-KEM session.
 - `GET|DELETE /bins/{bin_id}`
 - `GET|POST /readings`
 - `GET /alerts` (fill levels above 80%)
+- `GET /crypto/public-key`
 
 For cloud deployment, set `DATABASE_URL` to the provider's PostgreSQL
 connection string. The container listens on the provider's `PORT` value

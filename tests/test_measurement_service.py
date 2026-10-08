@@ -2,8 +2,8 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from cloud import MeasurementService
 from cloud.repositories import AlertRepository, BinReadingRepository
+from cloud.services import MeasurementService
 from models import Alert, BinReading
 
 
@@ -21,7 +21,7 @@ def test_save_measurement_persists_known_reading(repository: Mock) -> None:
     service = MeasurementService(repository)
 
     with patch(
-        "cloud.measurement_service.BinRepository",
+        "cloud.services.BinRepository",
         autospec=True,
     ) as bin_repository:
         bin_repository.return_value.get.return_value = object()
@@ -36,7 +36,7 @@ def test_save_measurement_rejects_unknown_device(repository: Mock) -> None:
     service = MeasurementService(repository)
 
     with patch(
-        "cloud.measurement_service.BinRepository",
+        "cloud.services.BinRepository",
         autospec=True,
     ) as bin_repository:
         bin_repository.return_value.get.return_value = None
@@ -52,7 +52,7 @@ def test_is_known_device_queries_bin_repository(repository: Mock) -> None:
     service = MeasurementService(repository)
 
     with patch(
-        "cloud.measurement_service.BinRepository",
+        "cloud.services.BinRepository",
         autospec=True,
     ) as bin_repository:
         bin_repository.return_value.get.return_value = object()
@@ -84,7 +84,7 @@ def test_save_measurement_does_not_raise_alert_at_threshold(
     service = MeasurementService(repository, alert_repository)
 
     with patch(
-        "cloud.measurement_service.BinRepository",
+        "cloud.services.BinRepository",
         autospec=True,
     ) as bin_repository:
         bin_repository.return_value.get.return_value = object()
@@ -102,7 +102,7 @@ def test_save_measurement_persists_alert_above_threshold(
     service = MeasurementService(repository, alert_repository)
 
     with patch(
-        "cloud.measurement_service.BinRepository",
+        "cloud.services.BinRepository",
         autospec=True,
     ) as bin_repository:
         bin_repository.return_value.get.return_value = object()
