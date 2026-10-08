@@ -19,6 +19,20 @@ def test_bin_reading_repository_serializes_database_timestamp() -> None:
     assert readings[0].recorded_at == recorded_at.isoformat()
 
 
+def test_bin_reading_repository_deletes_all_and_commits() -> None:
+    cursor = Mock()
+    database = Mock()
+    cursor_context = MagicMock()
+    cursor_context.__enter__.return_value = cursor
+    database.connection.return_value.cursor.return_value = cursor_context
+    repository = BinReadingRepository(database)
+
+    repository.delete_all()
+
+    cursor.execute.assert_called_once_with("DELETE FROM bin_readings WHERE 1=1")
+    database.connection.return_value.commit.assert_called_once_with()
+
+
 def test_alert_repository_serializes_database_timestamp() -> None:
     raised_at = datetime(2026, 10, 7, 20, 53, 8, tzinfo=timezone.utc)
     cursor = Mock()
@@ -32,3 +46,17 @@ def test_alert_repository_serializes_database_timestamp() -> None:
     alerts = repository.get_all()
 
     assert alerts[0].raised_at == raised_at.isoformat()
+
+
+def test_alert_repository_deletes_all_and_commits() -> None:
+    cursor = Mock()
+    database = Mock()
+    cursor_context = MagicMock()
+    cursor_context.__enter__.return_value = cursor
+    database.connection.return_value.cursor.return_value = cursor_context
+    repository = AlertRepository(database)
+
+    repository.delete_all()
+
+    cursor.execute.assert_called_once_with("DELETE FROM alerts WHERE 1=1")
+    database.connection.return_value.commit.assert_called_once_with()
