@@ -83,6 +83,12 @@ class MeasurementService:
     def get_alerts(self) -> list[Alert]:
         return self._alert_repository.get_all()
 
+    def delete_all_alerts(self) -> None:
+        self._alert_repository.delete_all()
+
+    def delete_all_measurements(self) -> None:
+        self._repository.delete_all()
+
 
 class CloudService:
     def __init__(self) -> None:

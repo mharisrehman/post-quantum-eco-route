@@ -138,6 +138,13 @@ def crypto_public_key(request: Request) -> dict[str, str]:
     }
 
 
+@app.post("/flush")
+def flush(request: Request) -> None:
+    _measurement_service(request).delete_all_alerts()
+    _measurement_service(request).delete_all_measurements()
+    return
+
+
 @app.get("/healthz")
 def healthcheck() -> dict[str, str]:
     return {"status": "ok"}
