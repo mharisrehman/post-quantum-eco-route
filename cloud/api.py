@@ -8,9 +8,10 @@ import os
 from typing import AsyncGenerator
 
 from fastapi import FastAPI, HTTPException, Request, status
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from cloud.bin_service import BinService
+from cloud.cloud_service import CloudService
 from cloud.database import Database
 from cloud.measurement_service import MeasurementService
 from models import Alert, Bin, BinReading
@@ -43,6 +44,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     database.initialize()
     app.state.database = database
     app.state.bin_service = BinService()
+    app.state.cloud_service = CloudService()
     app.state.measurement_service = MeasurementService()
     try:
         yield
@@ -73,6 +75,12 @@ class ReadingInput(BaseModel):
     recorded_at: str | None = None
 
 
+class ReadingEnvelope(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    payload_b64: str = Field(min_length=1)
+
+
 class ReadingResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -97,6 +105,10 @@ def _bin_service(request: Request) -> BinService:
 
 def _measurement_service(request: Request) -> MeasurementService:
     return request.app.state.measurement_service
+
+
+def _cloud_service(request: Request) -> CloudService:
+    return request.app.state.cloud_service
 
 
 @app.get("/healthz")
@@ -156,9 +168,26 @@ def list_alerts(request: Request) -> list[Alert]:
     status_code=status.HTTP_201_CREATED,
 )
 def create_reading(
-    payload: ReadingInput,
+    payload: ReadingInput | ReadingEnvelope,
     request: Request,
 ) -> BinReading:
+    if isinstance(payload, ReadingEnvelope):
+        try:
+            decoded_payload = _cloud_service(request).decode_reading(
+                payload.payload_b64
+            )
+            payload = ReadingInput.model_validate(decoded_payload)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=str(exc),
+            ) from exc
+        except ValidationError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=exc.errors(),
+            ) from exc
+
     reading = BinReading.create(payload.bin_id, payload.fill_level)
     if payload.recorded_at is not None:
         reading = replace(reading, recorded_at=payload.recorded_at)

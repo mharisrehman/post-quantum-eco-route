@@ -1,6 +1,8 @@
 import base64
 import json
+from unittest.mock import Mock
 from unittest.mock import patch
+from urllib.request import Request
 
 import pytest
 from fastapi.testclient import TestClient
@@ -18,6 +20,24 @@ def test_healthcheck(client: TestClient) -> None:
 
     assert response.status_code == 200
     assert response.json() == {"status": "ok"}
+
+
+def test_forward_to_cloud_posts_base64_json_envelope() -> None:
+    response = Mock(status=201)
+    response.read.return_value = b'{"id":1,"bin_id":"bin-1"}'
+    response.__enter__ = Mock(return_value=response)
+    response.__exit__ = Mock(return_value=None)
+
+    with patch("gateway.urlopen", return_value=response) as urlopen:
+        gateway.forward_to_cloud(
+            gateway.ReadingPayload(bin_id="bin-1", fill_level=42)
+        )
+
+    request = urlopen.call_args.args[0]
+    assert isinstance(request, Request)
+    envelope = json.loads(request.data)
+    decoded = base64.b64decode(envelope["payload_b64"], validate=True)
+    assert json.loads(decoded) == {"bin_id": "bin-1", "fill_level": 42}
 
 
 @pytest.mark.parametrize(
