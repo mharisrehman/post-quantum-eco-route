@@ -245,19 +245,20 @@ h2 {
   align-items: center;
   gap: 8px;
   padding: 7px 10px;
-  border: 1px solid #e6b7b0;
+  border: 1px solid #8ccbb1;
   border-radius: 6px;
-  background: #fff0ed;
-  color: #a33b32;
+  background: #eafaf3;
+  color: #0f6a4d;
   font-size: 11px;
   font-weight: 700;
   animation: banner-blink 1.4s ease-in-out infinite;
 }
 
 .base64-mark {
-  padding: 2px 4px;
+  padding: 2px 5px;
   border-radius: 3px;
-  background: #f6d9d4;
+  background: #cfeedd;
+  color: #0d5d43;
   font-size: 9px;
   line-height: 1.2;
 }
