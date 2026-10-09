@@ -96,7 +96,9 @@ def decode_ml_kem_payload(payload: dict[str, object]) -> dict[str, object]:
     try:
         shared_secret = session.decapsulate(kem_ciphertext)
         session.set_session_key(shared_secret)
-        plaintext = session.decrypt(EncryptedMessage(nonce, aes_ciphertext))
+        plaintext = session.decrypt(
+            EncryptedMessage(kem_ciphertext, nonce, aes_ciphertext)
+        )
     except Exception as exc:  # pragma: no cover - defensive; real pqcrypto errors vary
         raise HTTPException(
             status_code=400,
