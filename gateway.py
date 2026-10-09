@@ -57,9 +57,7 @@ def get_ml_kem_session() -> MlKemSession:
         private_key_b64 = os.getenv("GATEWAY_ML_KEM_PRIVATE_KEY")
         if private_key_b64:
             try:
-                session._private_key = base64.b64decode(
-                    private_key_b64, validate=True
-                )
+                session._private_key = base64.b64decode(private_key_b64, validate=True)
             except (binascii.Error, ValueError) as exc:
                 raise RuntimeError(
                     "GATEWAY_ML_KEM_PRIVATE_KEY must be valid Base64"
@@ -177,9 +175,7 @@ async def receive_reading(request: FastAPIRequest) -> JSONResponse:
         )
 
     if "payload_b64" in body:
-        if set(body) != {"payload_b64"} or not isinstance(
-            body["payload_b64"], str
-        ):
+        if set(body) != {"payload_b64"} or not isinstance(body["payload_b64"], str):
             raise HTTPException(
                 status_code=400,
                 detail="Base64 requests must contain only a string payload_b64 field",
@@ -192,9 +188,7 @@ async def receive_reading(request: FastAPIRequest) -> JSONResponse:
                 status_code=400,
                 detail="payload_b64 must decode to a JSON object",
             ) from exc
-    elif any(
-        key in body for key in ("kem_ciphertext", "nonce", "aes_ciphertext")
-    ):
+    elif any(key in body for key in ("kem_ciphertext", "nonce", "aes_ciphertext")):
         if set(body) != {"kem_ciphertext", "nonce", "aes_ciphertext"}:
             raise HTTPException(
                 status_code=400,
