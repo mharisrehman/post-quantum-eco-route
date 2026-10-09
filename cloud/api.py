@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 from contextlib import asynccontextmanager
 from dataclasses import replace
+from datetime import datetime
 from pathlib import Path
 from typing import AsyncGenerator
 
@@ -80,7 +81,7 @@ class BinResponse(BaseModel):
 class ReadingInput(BaseModel):
     bin_id: str = Field(min_length=1)
     fill_level: int = Field(ge=0, le=100)
-    recorded_at: str | None = None
+    recorded_at: datetime | None = None
 
 
 class ReadingEnvelope(BaseModel):
@@ -244,7 +245,10 @@ def create_reading(
 
     reading = BinReading.create(payload.bin_id, payload.fill_level)
     if payload.recorded_at is not None:
-        reading = replace(reading, recorded_at=payload.recorded_at)
+        reading = replace(
+            reading,
+            recorded_at=payload.recorded_at.isoformat(),
+        )
 
     try:
         return _measurement_service(request).save_measurement(reading)

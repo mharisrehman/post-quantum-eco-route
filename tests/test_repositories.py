@@ -2,6 +2,7 @@ from datetime import datetime, timezone
 from unittest.mock import MagicMock, Mock
 
 from cloud.repositories import AlertRepository, BinReadingRepository
+from models import BinReading
 
 
 def test_bin_reading_repository_serializes_database_timestamp() -> None:
@@ -17,6 +18,28 @@ def test_bin_reading_repository_serializes_database_timestamp() -> None:
     readings = repository.get_all()
 
     assert readings[0].recorded_at == recorded_at.isoformat()
+
+
+def test_bin_reading_repository_adapts_string_timestamp_for_postgres() -> None:
+    cursor = Mock()
+    cursor.fetchone.return_value = (1,)
+    database = Mock()
+    cursor_context = MagicMock()
+    cursor_context.__enter__.return_value = cursor
+    database.connection.return_value.cursor.return_value = cursor_context
+    repository = BinReadingRepository(database)
+
+    repository.create(
+        BinReading("bin-1", 50, "2026-10-07T20:53:08+00:00")
+    )
+
+    query, parameters = cursor.execute.call_args.args
+    assert "INSERT INTO bin_readings" in query
+    assert parameters == (
+        "bin-1",
+        50,
+        datetime(2026, 10, 7, 20, 53, 8, tzinfo=timezone.utc),
+    )
 
 
 def test_bin_reading_repository_deletes_all_and_commits() -> None:

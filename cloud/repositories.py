@@ -1,5 +1,6 @@
 """Database repositories used by cloud services."""
 
+from datetime import datetime
 from typing import Any
 
 from cloud.database import Database
@@ -54,6 +55,7 @@ class BinReadingRepository:
 
     def create(self, reading: BinReading) -> BinReading:
         connection = self._database.connection()
+        recorded_at = datetime.fromisoformat(reading.recorded_at)
         with connection.cursor() as cursor:
             cursor.execute(
                 """
@@ -61,7 +63,7 @@ class BinReadingRepository:
                 VALUES (%s, %s, %s)
                 RETURNING id
                 """,
-                (reading.bin_id, reading.fill_level, reading.recorded_at),
+                (reading.bin_id, reading.fill_level, recorded_at),
             )
             row: Any = cursor.fetchone()
         connection.commit()
