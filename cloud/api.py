@@ -2,21 +2,19 @@
 
 from __future__ import annotations
 
+import os
 from contextlib import asynccontextmanager
 from dataclasses import replace
-import os
 from pathlib import Path
 from typing import AsyncGenerator
 
 from fastapi import FastAPI, HTTPException, Request, status
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from cloud.bin_service import BinService
-from cloud.cloud_service import CloudService
 from cloud.database import Database
-from cloud.measurement_service import MeasurementService
+from cloud.services import BinService, CloudService, MeasurementService
 from models import Alert, Bin, BinReading
 
 
@@ -91,6 +89,14 @@ class ReadingEnvelope(BaseModel):
     payload_b64: str = Field(min_length=1)
 
 
+class EncryptedReadingEnvelope(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    kem_ciphertext_b64: str = Field(min_length=1)
+    nonce_b64: str = Field(min_length=1)
+    ciphertext_b64: str = Field(min_length=1)
+
+
 class ReadingResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -119,6 +125,24 @@ def _measurement_service(request: Request) -> MeasurementService:
 
 def _cloud_service(request: Request) -> CloudService:
     return request.app.state.cloud_service
+
+
+@app.get("/crypto/public-key")
+def crypto_public_key(request: Request) -> dict[str, str]:
+    import base64
+
+    return {
+        "public_key_b64": base64.b64encode(
+            _cloud_service(request).public_key
+        ).decode("ascii")
+    }
+
+
+@app.post("/flush")
+def flush(request: Request) -> None:
+    _measurement_service(request).delete_all_alerts()
+    _measurement_service(request).delete_all_measurements()
+    return
 
 
 @app.get("/healthz")
@@ -183,24 +207,39 @@ def list_alerts(request: Request) -> list[Alert]:
     status_code=status.HTTP_201_CREATED,
 )
 def create_reading(
-    payload: ReadingInput | ReadingEnvelope,
+    payload: ReadingInput | ReadingEnvelope | EncryptedReadingEnvelope,
     request: Request,
 ) -> BinReading:
-    if isinstance(payload, ReadingEnvelope):
+    if isinstance(payload, EncryptedReadingEnvelope):
         try:
-            decoded_payload = _cloud_service(request).decode_reading(
-                payload.payload_b64
+            payload = ReadingInput.model_validate(
+                _cloud_service(request).decrypt_reading(payload.model_dump())
             )
-            payload = ReadingInput.model_validate(decoded_payload)
+        except ValidationError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=exc.errors(),
+            ) from exc
         except ValueError as exc:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=str(exc),
             ) from exc
+    elif isinstance(payload, ReadingEnvelope):
+        try:
+            decoded_payload = _cloud_service(request).decode_reading(
+                payload.payload_b64
+            )
+            payload = ReadingInput.model_validate(decoded_payload)
         except ValidationError as exc:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail=exc.errors(),
+            ) from exc
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=str(exc),
             ) from exc
 
     reading = BinReading.create(payload.bin_id, payload.fill_level)

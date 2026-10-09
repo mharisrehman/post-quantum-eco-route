@@ -76,6 +76,12 @@ select {
   align-items: center;
 }
 
+.topbar-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .brand-copy {
   flex-direction: column;
   align-items: flex-start;
@@ -142,7 +148,31 @@ select {
   background: #244a42;
 }
 
+.delete-data-button {
+  min-height: 36px;
+  padding: 0 13px;
+  border: 1px solid #e68069;
+  border-radius: 7px;
+  background: var(--red);
+  color: var(--white);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.delete-data-button:hover {
+  border-color: #f09b87;
+  background: #963f36;
+}
+
+.delete-data-button:disabled,
+.refresh-button:disabled {
+  cursor: wait;
+  opacity: 0.6;
+}
+
 .refresh-button:focus-visible,
+.delete-data-button:focus-visible,
 select:focus-visible {
   outline: 3px solid #87cbb2;
   outline-offset: 2px;

@@ -2,8 +2,8 @@ from unittest.mock import Mock
 
 import pytest
 
-from cloud import BinService
 from cloud.repositories import BinRepository
+from cloud.services import BinService
 from models import Bin
 
 
