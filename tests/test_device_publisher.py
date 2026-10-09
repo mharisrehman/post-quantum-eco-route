@@ -9,32 +9,6 @@ from device.device_service import DeviceService
 from models import BinReading
 
 
-def test_publish_reading_posts_base64_json_to_gateway() -> None:
-    response = Mock(status=201)
-    response.__enter__ = Mock(return_value=response)
-    response.__exit__ = Mock(return_value=None)
-
-    with patch.object(
-        DeviceService, "_read_public_key", side_effect=RuntimeError
-    ):
-        with patch(
-            "device.device_service.urlopen", return_value=response
-        ) as urlopen:
-            DeviceService("http://gateway:8001/").publish_reading(
-                BinReading("bin-1", 42, "now")
-            )
-
-    request = urlopen.call_args.args[0]
-    assert isinstance(request, Request)
-    assert request.full_url == "http://gateway:8001/readings"
-    assert request.get_method() == "POST"
-    assert request.get_header("Content-type") == "application/json"
-    envelope = json.loads(request.data)
-    decoded_reading = base64.b64decode(envelope["payload_b64"], validate=True)
-    assert json.loads(decoded_reading) == {"bin_id": "bin-1", "fill_level": 42}
-    urlopen.assert_called_once_with(request, timeout=10)
-
-
 def test_publish_reading_uses_ml_kem_encrypted_envelope() -> None:
     public_key_response = Mock(status=200)
     public_key_response.read.return_value = (
@@ -60,7 +34,12 @@ def test_publish_reading_uses_ml_kem_encrypted_envelope() -> None:
             self.key = shared_secret
 
         def encrypt(self, payload: bytes, kem_ciphertext: bytes) -> object:
-            assert payload == b'{"bin_id": "bin-1", "fill_level": 42}'
+            reading = json.loads(payload)
+            assert reading == {
+                "bin_id": "bin-1",
+                "fill_level": 42,
+                "recorded_at": "now",
+            }
             assert kem_ciphertext == b"kem-ciphertext"
             return type(
                 "Encrypted",
@@ -77,9 +56,9 @@ def test_publish_reading_uses_ml_kem_encrypted_envelope() -> None:
         with patch(
             "device.device_service.MlKemSession", return_value=FakeSession()
         ):
-            DeviceService("http://gateway:8001/ ").publish_reading(
-                BinReading("bin-1", 42, "now")
-            )
+            DeviceService(
+                "http://gateway:8001/ ", {"bin-1": "secret"}
+            ).publish_reading(BinReading("bin-1", 42, "now"))
 
     request = urlopen.call_args.args[0]
     assert isinstance(request, Request)
@@ -95,6 +74,23 @@ def test_publish_reading_uses_ml_kem_encrypted_envelope() -> None:
     assert envelope["aes_ciphertext"] == base64.b64encode(
         b"aes-ciphertext"
     ).decode("ascii")
+    assert request.get_header("X-device-id") == "bin-1"
+    assert request.get_header("X-api-key") == "secret"
+
+
+def test_publish_reading_does_not_fall_back_to_base64() -> None:
+    service = DeviceService("http://gateway:8001", {"bin-1": "secret"})
+    with (
+        patch.object(
+            DeviceService,
+            "_read_public_key",
+            side_effect=RuntimeError("key unavailable"),
+        ),
+        patch("device.device_service.urlopen") as urlopen,
+        pytest.raises(RuntimeError, match="key unavailable"),
+    ):
+        service.publish_reading(BinReading("bin-1", 42, "now"))
+    urlopen.assert_not_called()
 
 
 def test_publish_reading_rejects_unexpected_success_status() -> None:
@@ -102,8 +98,29 @@ def test_publish_reading_rejects_unexpected_success_status() -> None:
     response.__enter__ = Mock(return_value=response)
     response.__exit__ = Mock(return_value=None)
 
-    with patch("device.device_service.urlopen", return_value=response):
+    public_key_response = Mock(status=200)
+    public_key_response.read.return_value = (
+        b'{"public_key_b64": "cHVibGljLWtleQ=="}'
+    )
+    public_key_response.__enter__ = Mock(return_value=public_key_response)
+    public_key_response.__exit__ = Mock(return_value=None)
+    with patch(
+        "device.device_service.urlopen",
+        side_effect=[public_key_response, response],
+    ):
         with pytest.raises(RuntimeError, match="unexpected status 200"):
-            DeviceService("http://gateway:8001").publish_reading(
-                BinReading("bin-1", 42, "now")
-            )
+            with patch("device.device_service.MlKemSession") as session_type:
+                session = session_type.return_value
+                session.encapsulate.return_value = (b"kem", b"secret")
+                session.encrypt.return_value = type(
+                    "Encrypted",
+                    (),
+                    {
+                        "kem_ciphertext": b"kem",
+                        "nonce": b"123456789012",
+                        "ciphertext": b"ciphertext",
+                    },
+                )()
+                DeviceService(
+                    "http://gateway:8001", {"bin-1": "secret"}
+                ).publish_reading(BinReading("bin-1", 42, "now"))

@@ -5,8 +5,8 @@ A simple Edge-Cloud simulation for municipal waste-bin monitoring and pickup opt
 ## Components
 
 - `device/`: sensor-device folder that generates periodic readings for multiple bins and sends them to the cloud API.
-- `gateway.py`: HTTP edge gateway that accepts JSON or Base64-encoded readings and forwards them to the cloud API.
-- `cloud/cloud_service.py`: decodes Base64 JSON envelopes received from the gateway.
+- `gateway.py`: HTTP edge gateway that authenticates devices, decrypts ML-KEM readings, and re-encrypts them for the cloud API.
+- `cloud/cloud_service.py`: decrypts ML-KEM/AES-GCM readings received from the gateway.
 - `dashboard/`: live admin dashboard for bin readings, alerts, and the system pipeline.
 - `ml-kem_crypto.py`: ML-KEM-768 key exchange and AES-GCM session encryption primitives.
 - `cloud/`: PostgreSQL-backed cloud CRUD services and FastAPI REST API.
@@ -22,11 +22,11 @@ pytest
 ```
 
 Set `device/.env` from `device/.env.example` to configure
-`DEVICE_INTERVAL_SECONDS` (default `5`; the example sets `15`),
-`DEVICE_BIN_IDS` (comma-separated
-bin IDs; defaults to `bin-1,bin-2,bin-3`), and `CLOUD_API_URL` (the device's
-gateway URL; default `http://localhost:8001`). If `DEVICE_BIN_IDS` is unset,
-`DEVICE_BIN_ID` can select a single device.
+`DEVICE_INTERVAL_SECONDS`, `DEVICE_BIN_IDS`, `CLOUD_API_URL`, and
+`DEVICE_API_KEYS`. The API key list uses comma-separated `device-id=key`
+pairs; each configured device ID must match a bin ID. Configure the same key
+map for the gateway. If `DEVICE_BIN_IDS` is unset, `DEVICE_BIN_ID` can select
+a single device.
 Database initialization creates `bin-1`, `bin-2`, and `bin-3` by default.
 
 ## REST API
@@ -38,24 +38,20 @@ docker compose up --build postgres api
 ```
 
 The API exposes OpenAPI documentation at `http://localhost:8000/docs`.
-With the API running, start the simulator in another terminal:
+Start the gateway with the API, then start the simulator in another terminal:
 
 ```powershell
+docker compose up --build gateway
 python -m device.main
 ```
 
-The gateway listens at `http://localhost:8001`. The device service posts
-readings as a Base64 JSON envelope:
-
-```json
-{"payload_b64":"eyJiaW5faWQiOiJiaW4tMSIsImZpbGxfbGV2ZWwiOjQyfQ=="}
-```
-
-The Base64 value must decode to a JSON reading (for example,
-`{"bin_id":"bin-1","fill_level":42}`). The gateway decodes and validates the
-device reading, then sends a Base64 JSON envelope to the cloud API. The cloud
-service decodes it before validation and storage. Base64 is an encoding, not
-encryption; the gateway does not currently establish an ML-KEM session.
+The gateway listens at `http://localhost:8001`. Readings must use the ML-KEM
+encrypted envelope and include valid `X-Device-ID` and `X-API-Key` headers.
+The authenticated device ID must match the decrypted reading's `bin_id`, and
+the reading timestamp must be within 60 seconds of gateway time. The gateway
+rejects plain JSON, Base64-only payloads, stale readings, and duplicate
+encrypted envelopes. It re-encrypts accepted readings with the cloud's public
+key before forwarding them.
 
 - `GET /healthz`
 - `GET|POST /bins`
@@ -97,10 +93,12 @@ docker compose up --build
 ```
 
 Compose starts PostgreSQL, the cloud API, the gateway, and the device
-simulator. The device service Base64-encodes readings for the gateway, which
-decodes them, then Base64-encodes them for the cloud service to decode. View
-stored readings at
-`GET /readings` and alerts at `GET /alerts`.
+simulator. For local testing, Compose supplies development-only device keys
+for `bin-1`, `bin-2`, and `bin-3`. Set `DEVICE_API_KEYS` in the root `.env`
+file to override them; use unique, secret values outside local testing. View
+stored readings at `GET /readings` and alerts at `GET /alerts`.
 
-Production deployment should still add device identity, replay protection,
-authenticated transport, secret management, and operational routing logic.
+HTTPS remains deferred as requested, so use this setup only on a trusted
+network. Production deployments should configure durable gateway ML-KEM keys
+with `GATEWAY_ML_KEM_PUBLIC_KEY` and `GATEWAY_ML_KEM_PRIVATE_KEY`, provision
+strong device API keys, and enable HTTPS.

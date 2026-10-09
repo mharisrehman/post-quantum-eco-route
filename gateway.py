@@ -2,8 +2,12 @@
 
 import base64
 import binascii
+import hashlib
+import hmac
 import json
 import os
+from datetime import datetime, timedelta, timezone
+from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
@@ -29,6 +33,7 @@ except ModuleNotFoundError:
 DEFAULT_CLOUD_API_URL = "http://localhost:8000"
 CLOUD_API_URL = os.getenv("CLOUD_API_URL", DEFAULT_CLOUD_API_URL).rstrip("/")
 HTTP_TIMEOUT_SECONDS = 10
+MAX_READING_AGE_SECONDS = 60
 
 app = FastAPI(title="Eco Route Edge Gateway", version="0.1.0")
 
@@ -38,34 +43,65 @@ class ReadingPayload(BaseModel):
 
     bin_id: str = Field(min_length=1)
     fill_level: int = Field(ge=0, le=100)
-    recorded_at: str | None = None
+    recorded_at: str
 
 
-def decode_base64_payload(payload: str) -> bytes:
-    try:
-        return base64.b64decode(payload, validate=True)
-    except (binascii.Error, ValueError) as exc:
-        raise HTTPException(
-            status_code=400, detail="payload_b64 must be valid Base64"
-        ) from exc
-
-
-def get_ml_kem_session() -> MlKemSession:
+def get_ml_kem_session() -> Any:
     session = getattr(app.state, "ml_kem_session", None)
     if session is None:
         session = MlKemSession()
         private_key_b64 = os.getenv("GATEWAY_ML_KEM_PRIVATE_KEY")
-        if private_key_b64:
+        public_key_b64 = os.getenv("GATEWAY_ML_KEM_PUBLIC_KEY")
+        if bool(private_key_b64) != bool(public_key_b64):
+            raise RuntimeError(
+                "Gateway ML-KEM public and private keys must both be configured"
+            )
+        if private_key_b64 and public_key_b64:
             try:
                 session._private_key = base64.b64decode(
                     private_key_b64, validate=True
                 )
+                app.state.gateway_public_key = base64.b64decode(
+                    public_key_b64, validate=True
+                )
             except (binascii.Error, ValueError) as exc:
                 raise RuntimeError(
-                    "GATEWAY_ML_KEM_PRIVATE_KEY must be valid Base64"
+                    "Gateway ML-KEM keys must be valid Base64"
                 ) from exc
+        else:
+            app.state.gateway_public_key = session.create_keypair()
         app.state.ml_kem_session = session
     return session
+
+
+def configured_device_keys() -> dict[str, str]:
+    configured = os.getenv("DEVICE_API_KEYS", "")
+    device_keys: dict[str, str] = {}
+    for entry in configured.split(","):
+        device_id, separator, api_key = entry.strip().partition("=")
+        if separator and device_id and api_key:
+            device_keys[device_id] = api_key
+    return device_keys
+
+
+def authenticate_device(request: FastAPIRequest) -> str:
+    device_id = request.headers.get("X-Device-ID", "")
+    api_key = request.headers.get("X-API-Key", "")
+    device_keys = configured_device_keys()
+    expected_key = device_keys.get(device_id)
+    if expected_key is None:
+        if not device_keys:
+            raise HTTPException(
+                status_code=500, detail="Device API keys are not configured"
+            )
+        raise HTTPException(
+            status_code=401, detail="Invalid device credentials"
+        )
+    if not hmac.compare_digest(api_key, expected_key):
+        raise HTTPException(
+            status_code=401, detail="Invalid device credentials"
+        )
+    return device_id
 
 
 def decode_ml_kem_payload(payload: dict[str, object]) -> dict[str, object]:
@@ -135,8 +171,23 @@ def decode_ml_kem_payload(payload: dict[str, object]) -> dict[str, object]:
 
 def forward_to_cloud(reading: ReadingPayload) -> dict[str, object]:
     reading_json = reading.model_dump_json(exclude_none=True).encode("utf-8")
+    cloud_public_key = read_cloud_public_key()
+    session = MlKemSession()
+    kem_ciphertext, shared_secret = session.encapsulate(cloud_public_key)
+    session.set_session_key(shared_secret)
+    encrypted_message = session.encrypt(reading_json, kem_ciphertext)
     payload = json.dumps(
-        {"payload_b64": base64.b64encode(reading_json).decode("ascii")}
+        {
+            "kem_ciphertext_b64": base64.b64encode(
+                encrypted_message.kem_ciphertext
+            ).decode("ascii"),
+            "nonce_b64": base64.b64encode(encrypted_message.nonce).decode(
+                "ascii"
+            ),
+            "ciphertext_b64": base64.b64encode(
+                encrypted_message.ciphertext
+            ).decode("ascii"),
+        }
     ).encode("utf-8")
     request = Request(
         f"{CLOUD_API_URL}/readings",
@@ -163,8 +214,7 @@ def forward_to_cloud(reading: ReadingPayload) -> dict[str, object]:
         ) from exc
 
 
-@app.get("/crypto/public-key")
-def crypto_public_key() -> dict[str, str]:
+def read_cloud_public_key() -> bytes:
     request = Request(
         f"{CLOUD_API_URL}/crypto/public-key",
         headers={"Accept": "application/json"},
@@ -208,7 +258,62 @@ def crypto_public_key() -> dict[str, str]:
             status_code=502,
             detail="Cloud API did not return a valid public key",
         )
-    return {"public_key_b64": payload["public_key_b64"]}
+    try:
+        return base64.b64decode(payload["public_key_b64"], validate=True)
+    except (binascii.Error, ValueError) as exc:
+        raise HTTPException(
+            status_code=502,
+            detail="Cloud API did not return a valid public key",
+        ) from exc
+
+
+@app.get("/crypto/public-key")
+def crypto_public_key() -> dict[str, str]:
+    public_key = getattr(app.state, "gateway_public_key", None)
+    if public_key is None:
+        get_ml_kem_session()
+        public_key = app.state.gateway_public_key
+    return {"public_key_b64": base64.b64encode(public_key).decode("ascii")}
+
+
+def validate_reading_timestamp(recorded_at: str) -> datetime:
+    try:
+        timestamp = datetime.fromisoformat(recorded_at.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=400, detail="recorded_at must be an ISO-8601 timestamp"
+        ) from exc
+    if timestamp.tzinfo is None:
+        raise HTTPException(
+            status_code=400,
+            detail="recorded_at must include a timezone",
+        )
+    now = datetime.now(timezone.utc)
+    if abs(now - timestamp.astimezone(timezone.utc)) > timedelta(
+        seconds=MAX_READING_AGE_SECONDS
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail="Reading timestamp is outside the allowed 60-second window",
+        )
+    return now
+
+
+def reject_replayed_envelope(payload: dict[str, object], now: datetime) -> None:
+    digest = hashlib.sha256(
+        json.dumps(payload, sort_keys=True).encode("utf-8")
+    ).hexdigest()
+    cutoff = now - timedelta(seconds=MAX_READING_AGE_SECONDS)
+    seen = getattr(app.state, "seen_envelopes", {})
+    seen = {
+        previous_digest: seen_at
+        for previous_digest, seen_at in seen.items()
+        if seen_at >= cutoff
+    }
+    if digest in seen:
+        raise HTTPException(status_code=409, detail="Reading replay rejected")
+    seen[digest] = now
+    app.state.seen_envelopes = seen
 
 
 @app.get("/healthz")
@@ -218,6 +323,7 @@ def healthcheck() -> dict[str, str]:
 
 @app.post("/readings", status_code=201)
 async def receive_reading(request: FastAPIRequest) -> JSONResponse:
+    device_id = authenticate_device(request)
     try:
         body = await request.json()
     except (json.JSONDecodeError, UnicodeDecodeError) as exc:
@@ -230,34 +336,16 @@ async def receive_reading(request: FastAPIRequest) -> JSONResponse:
             status_code=400, detail="Request body must be a JSON object"
         )
 
-    if "payload_b64" in body:
-        if set(body) != {"payload_b64"} or not isinstance(
-            body["payload_b64"], str
-        ):
-            raise HTTPException(
-                status_code=400,
-                detail="Base64 requests must contain only a string payload_b64 field",
-            )
-        decoded = decode_base64_payload(body["payload_b64"])
-        try:
-            body = json.loads(decoded.decode("utf-8"))
-        except (json.JSONDecodeError, UnicodeDecodeError) as exc:
-            raise HTTPException(
-                status_code=400,
-                detail="payload_b64 must decode to a JSON object",
-            ) from exc
-    elif any(
-        key in body for key in ("kem_ciphertext", "nonce", "aes_ciphertext")
-    ):
-        if set(body) != {"kem_ciphertext", "nonce", "aes_ciphertext"}:
-            raise HTTPException(
-                status_code=400,
-                detail=(
-                    "ML-KEM requests must contain only kem_ciphertext, "
-                    "nonce and aes_ciphertext fields"
-                ),
-            )
-        body = decode_ml_kem_payload(body)
+    if set(body) != {"kem_ciphertext", "nonce", "aes_ciphertext"}:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Requests must contain only kem_ciphertext, nonce and "
+                "aes_ciphertext fields"
+            ),
+        )
+    encrypted_body = body
+    body = decode_ml_kem_payload(body)
 
     if not isinstance(body, dict):
         raise HTTPException(
@@ -268,6 +356,14 @@ async def receive_reading(request: FastAPIRequest) -> JSONResponse:
         reading = ReadingPayload.model_validate(body)
     except ValidationError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+    if reading.bin_id != device_id:
+        raise HTTPException(
+            status_code=403,
+            detail="Authenticated device cannot submit readings for this bin",
+        )
+
+    now = validate_reading_timestamp(reading.recorded_at)
+    reject_replayed_envelope(encrypted_body, now)
 
     result = forward_to_cloud(reading)
     return JSONResponse(content=result, status_code=201)
