@@ -57,7 +57,9 @@ def get_ml_kem_session() -> MlKemSession:
         private_key_b64 = os.getenv("GATEWAY_ML_KEM_PRIVATE_KEY")
         if private_key_b64:
             try:
-                session._private_key = base64.b64decode(private_key_b64, validate=True)
+                session._private_key = base64.b64decode(
+                    private_key_b64, validate=True
+                )
             except (binascii.Error, ValueError) as exc:
                 raise RuntimeError(
                     "GATEWAY_ML_KEM_PRIVATE_KEY must be valid Base64"
@@ -78,9 +80,13 @@ def decode_ml_kem_payload(payload: dict[str, object]) -> dict[str, object]:
         )
 
     try:
-        kem_ciphertext = base64.b64decode(payload["kem_ciphertext"], validate=True)
+        kem_ciphertext = base64.b64decode(
+            payload["kem_ciphertext"], validate=True
+        )
         nonce = base64.b64decode(payload["nonce"], validate=True)
-        aes_ciphertext = base64.b64decode(payload["aes_ciphertext"], validate=True)
+        aes_ciphertext = base64.b64decode(
+            payload["aes_ciphertext"], validate=True
+        )
     except (TypeError, ValueError, binascii.Error) as exc:
         raise HTTPException(
             status_code=400,
@@ -103,7 +109,9 @@ def decode_ml_kem_payload(payload: dict[str, object]) -> dict[str, object]:
         plaintext = session.decrypt(
             EncryptedMessage(kem_ciphertext, nonce, aes_ciphertext)
         )
-    except Exception as exc:  # pragma: no cover - defensive; real pqcrypto errors vary
+    except (
+        Exception
+    ) as exc:  # pragma: no cover - defensive; real pqcrypto errors vary
         raise HTTPException(
             status_code=400,
             detail="ML-KEM payload could not be decrypted",
@@ -175,7 +183,9 @@ async def receive_reading(request: FastAPIRequest) -> JSONResponse:
         )
 
     if "payload_b64" in body:
-        if set(body) != {"payload_b64"} or not isinstance(body["payload_b64"], str):
+        if set(body) != {"payload_b64"} or not isinstance(
+            body["payload_b64"], str
+        ):
             raise HTTPException(
                 status_code=400,
                 detail="Base64 requests must contain only a string payload_b64 field",
@@ -188,7 +198,9 @@ async def receive_reading(request: FastAPIRequest) -> JSONResponse:
                 status_code=400,
                 detail="payload_b64 must decode to a JSON object",
             ) from exc
-    elif any(key in body for key in ("kem_ciphertext", "nonce", "aes_ciphertext")):
+    elif any(
+        key in body for key in ("kem_ciphertext", "nonce", "aes_ciphertext")
+    ):
         if set(body) != {"kem_ciphertext", "nonce", "aes_ciphertext"}:
             raise HTTPException(
                 status_code=400,

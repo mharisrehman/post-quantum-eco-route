@@ -29,7 +29,9 @@ def test_forward_to_cloud_posts_base64_json_envelope() -> None:
     response.__exit__ = Mock(return_value=None)
 
     with patch("gateway.urlopen", return_value=response) as urlopen:
-        gateway.forward_to_cloud(gateway.ReadingPayload(bin_id="bin-1", fill_level=42))
+        gateway.forward_to_cloud(
+            gateway.ReadingPayload(bin_id="bin-1", fill_level=42)
+        )
 
     request = urlopen.call_args.args[0]
     assert isinstance(request, Request)
@@ -44,7 +46,9 @@ def test_forward_to_cloud_posts_base64_json_envelope() -> None:
         {"bin_id": "bin-1", "fill_level": 42},
         {
             "payload_b64": base64.b64encode(
-                json.dumps({"bin_id": "bin-1", "fill_level": 42}).encode("utf-8")
+                json.dumps({"bin_id": "bin-1", "fill_level": 42}).encode(
+                    "utf-8"
+                )
             ).decode("ascii")
         },
     ],
@@ -77,7 +81,9 @@ def test_readings_accepts_mlkem_encrypted_json(client: TestClient) -> None:
         def decrypt(self, message: object) -> bytes:
             assert getattr(message, "nonce") == b"123456789012"
             assert getattr(message, "ciphertext") == b"aes-ciphertext"
-            return json.dumps({"bin_id": "bin-1", "fill_level": 42}).encode("utf-8")
+            return json.dumps({"bin_id": "bin-1", "fill_level": 42}).encode(
+                "utf-8"
+            )
 
     payload = {
         "kem_ciphertext": base64.b64encode(b"kem-ciphertext").decode("ascii"),
@@ -85,7 +91,9 @@ def test_readings_accepts_mlkem_encrypted_json(client: TestClient) -> None:
         "aes_ciphertext": base64.b64encode(b"aes-ciphertext").decode("ascii"),
     }
 
-    with patch.object(gateway, "get_ml_kem_session", return_value=FakeSession()):
+    with patch.object(
+        gateway, "get_ml_kem_session", return_value=FakeSession()
+    ):
         cloud_response = {"id": 1, "bin_id": "bin-1", "fill_level": 42}
         with patch.object(
             gateway, "forward_to_cloud", return_value=cloud_response
