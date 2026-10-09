@@ -7,9 +7,8 @@ import pytest
 from fastapi.testclient import TestClient
 
 from cloud import api
-from cloud.bin_service import BinService
+from cloud.services import BinService, MeasurementService
 from cloud.database import Database
-from cloud.measurement_service import MeasurementService
 from models import Bin, BinReading
 
 
@@ -43,6 +42,19 @@ def test_healthcheck(client: TestClient) -> None:
 
     assert response.status_code == 200
     assert response.json() == {"status": "ok"}
+
+
+def test_flush_deletes_all_measurements_and_alerts(
+    client: TestClient,
+    services: tuple[Mock, Mock],
+) -> None:
+    _, measurement_service = services
+
+    response = client.post("/flush")
+
+    assert response.status_code == 200
+    measurement_service.delete_all_alerts.assert_called_once_with()
+    measurement_service.delete_all_measurements.assert_called_once_with()
 
 
 def test_dashboard_serves_page_and_assets(client: TestClient) -> None:

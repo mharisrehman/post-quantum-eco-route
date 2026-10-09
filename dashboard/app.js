@@ -7,6 +7,7 @@ const elements = {
   averageFill: document.querySelector("#average-fill"),
   binCount: document.querySelector("#bin-count"),
   binSelect: document.querySelector("#bin-select"),
+  deleteDataButton: document.querySelector("#delete-data-button"),
   errorBanner: document.querySelector("#error-banner"),
   fillDisplay: document.querySelector("#fill-display"),
   fillLevel: document.querySelector("#fill-level"),
@@ -299,11 +300,35 @@ async function refreshDashboard() {
   }
 }
 
+async function deleteAllData() {
+  const confirmed = window.confirm(
+    "Delete all stored measurements and alerts? This cannot be undone.",
+  );
+  if (!confirmed) return;
+
+  elements.deleteDataButton.disabled = true;
+  try {
+    const response = await fetch("/flush", {
+      method: "POST",
+      cache: "no-store",
+    });
+    if (!response.ok) {
+      throw new Error(`/flush returned HTTP ${response.status}`);
+    }
+    await refreshDashboard();
+  } catch (error) {
+    setSystemState(false, `Could not delete dashboard data: ${error.message}`);
+  } finally {
+    elements.deleteDataButton.disabled = false;
+  }
+}
+
 elements.binSelect.addEventListener("change", () => {
   state.selectedBinId = elements.binSelect.value;
   renderCurrentReading();
 });
 elements.refreshButton.addEventListener("click", refreshDashboard);
+elements.deleteDataButton.addEventListener("click", deleteAllData);
 window.addEventListener("resize", () => {
   if (state.selectedBinId) renderCurrentReading();
 });

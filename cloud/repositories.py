@@ -2,9 +2,8 @@
 
 from typing import Any
 
-from models import Alert, Bin, BinReading
-
 from cloud.database import Database
+from models import Alert, Bin, BinReading
 
 
 class BinRepository:
@@ -93,6 +92,12 @@ class BinReadingRepository:
             for row in rows
         ]
 
+    def delete_all(self) -> None:
+        connection = self._database.connection()
+        with connection.cursor() as cursor:
+            cursor.execute("DELETE FROM bin_readings WHERE 1=1")
+        connection.commit()
+
 
 class AlertRepository:
     def __init__(self, database: Database | None = None) -> None:
@@ -137,3 +142,9 @@ class AlertRepository:
             )
             for row in rows
         ]
+
+    def delete_all(self) -> None:
+        connection = self._database.connection()
+        with connection.cursor() as cursor:
+            cursor.execute("DELETE FROM alerts WHERE 1=1")
+        connection.commit()

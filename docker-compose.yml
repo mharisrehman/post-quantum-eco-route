@@ -1,3 +1,5 @@
+name: eco-route
+
 services:
   postgres:
     image: postgres:16-alpine
@@ -49,6 +51,9 @@ services:
       ]
     environment:
       CLOUD_API_URL: http://api:8000
+      DEVICE_API_KEYS: ${DEVICE_API_KEYS:-bin-1=local-bin-1-key,bin-2=local-bin-2-key,bin-3=local-bin-3-key}
+      GATEWAY_ML_KEM_PUBLIC_KEY: ${GATEWAY_ML_KEM_PUBLIC_KEY:-}
+      GATEWAY_ML_KEM_PRIVATE_KEY: ${GATEWAY_ML_KEM_PRIVATE_KEY:-}
     ports:
       - "8001:8001"
     healthcheck:
@@ -73,6 +78,7 @@ services:
       CLOUD_API_URL: http://gateway:8001
       DEVICE_INTERVAL_SECONDS: ${DEVICE_INTERVAL_SECONDS:-15}
       DEVICE_BIN_IDS: ${DEVICE_BIN_IDS:-bin-1,bin-2,bin-3}
+      DEVICE_API_KEYS: ${DEVICE_API_KEYS:-bin-1=local-bin-1-key,bin-2=local-bin-2-key,bin-3=local-bin-3-key}
 
 volumes:
   postgres-data:
