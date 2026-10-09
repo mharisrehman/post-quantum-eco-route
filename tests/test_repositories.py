@@ -29,9 +29,7 @@ def test_bin_reading_repository_adapts_string_timestamp_for_postgres() -> None:
     database.connection.return_value.cursor.return_value = cursor_context
     repository = BinReadingRepository(database)
 
-    repository.create(
-        BinReading("bin-1", 50, "2026-10-07T20:53:08+00:00")
-    )
+    repository.create(BinReading("bin-1", 50, "2026-10-07T20:53:08+00:00"))
 
     query, parameters = cursor.execute.call_args.args
     assert "INSERT INTO bin_readings" in query
