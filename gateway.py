@@ -73,7 +73,10 @@ def decode_ml_kem_payload(payload: dict[str, object]) -> dict[str, object]:
     if set(payload) != allowed_keys:
         raise HTTPException(
             status_code=400,
-            detail="ML-KEM requests must contain only kem_ciphertext, nonce and aes_ciphertext fields",
+            detail=(
+                "ML-KEM requests must contain only kem_ciphertext, "
+                "nonce and aes_ciphertext fields"
+            ),
         )
 
     try:
@@ -87,7 +90,10 @@ def decode_ml_kem_payload(payload: dict[str, object]) -> dict[str, object]:
         ) from exc
 
     session = get_ml_kem_session()
-    if isinstance(session, MlKemSession) and getattr(session, "_private_key", None) is None:
+    if (
+        isinstance(session, MlKemSession)
+        and getattr(session, "_private_key", None) is None
+    ):
         raise HTTPException(
             status_code=500,
             detail="Gateway ML-KEM private key is not configured",
@@ -186,11 +192,16 @@ async def receive_reading(request: FastAPIRequest) -> JSONResponse:
                 status_code=400,
                 detail="payload_b64 must decode to a JSON object",
             ) from exc
-    elif any(key in body for key in ("kem_ciphertext", "nonce", "aes_ciphertext")):
+    elif any(
+        key in body for key in ("kem_ciphertext", "nonce", "aes_ciphertext")
+    ):
         if set(body) != {"kem_ciphertext", "nonce", "aes_ciphertext"}:
             raise HTTPException(
                 status_code=400,
-                detail="ML-KEM requests must contain only kem_ciphertext, nonce and aes_ciphertext fields",
+                detail=(
+                    "ML-KEM requests must contain only kem_ciphertext, "
+                    "nonce and aes_ciphertext fields"
+                ),
             )
         body = decode_ml_kem_payload(body)
 
