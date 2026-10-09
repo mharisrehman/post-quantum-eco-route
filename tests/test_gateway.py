@@ -107,6 +107,23 @@ def test_readings_accepts_mlkem_encrypted_json(client: TestClient) -> None:
     assert forwarded_reading.fill_level == 42
 
 
+def test_crypto_public_key_proxies_cloud_key(client: TestClient) -> None:
+    with patch("gateway.urlopen") as urlopen:
+        response = Mock()
+        response.status = 200
+        response.read.return_value = b'{"public_key_b64": "cHVibGljLWtleQ=="}'
+        response.__enter__ = Mock(return_value=response)
+        response.__exit__ = Mock(return_value=None)
+        urlopen.return_value = response
+
+        response_obj = client.get("/crypto/public-key")
+
+    assert response_obj.status_code == 200
+    assert response_obj.json() == {"public_key_b64": "cHVibGljLWtleQ=="}
+    request = urlopen.call_args.args[0]
+    assert request.full_url == f"{gateway.CLOUD_API_URL}/crypto/public-key"
+
+
 @pytest.mark.parametrize(
     ("payload", "status_code"),
     [

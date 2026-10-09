@@ -163,6 +163,54 @@ def forward_to_cloud(reading: ReadingPayload) -> dict[str, object]:
         ) from exc
 
 
+@app.get("/crypto/public-key")
+def crypto_public_key() -> dict[str, str]:
+    request = Request(
+        f"{CLOUD_API_URL}/crypto/public-key",
+        headers={"Accept": "application/json"},
+        method="GET",
+    )
+    try:
+        with urlopen(request, timeout=HTTP_TIMEOUT_SECONDS) as response:
+            if response.status != 200:
+                raise HTTPException(
+                    status_code=502,
+                    detail=(
+                        "Cloud API returned unexpected status "
+                        f"{response.status}"
+                    ),
+                )
+            payload = json.loads(response.read().decode("utf-8"))
+    except HTTPError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Cloud API rejected the public key request with status {exc.code}",
+        ) from exc
+    except URLError as exc:
+        raise HTTPException(
+            status_code=502, detail="Cloud API could not be reached"
+        ) from exc
+    except (
+        TypeError,
+        ValueError,
+        json.JSONDecodeError,
+        UnicodeDecodeError,
+    ) as exc:
+        raise HTTPException(
+            status_code=502,
+            detail="Cloud API did not return a valid public key",
+        ) from exc
+
+    if not isinstance(payload, dict) or not isinstance(
+        payload.get("public_key_b64"), str
+    ):
+        raise HTTPException(
+            status_code=502,
+            detail="Cloud API did not return a valid public key",
+        )
+    return {"public_key_b64": payload["public_key_b64"]}
+
+
 @app.get("/healthz")
 def healthcheck() -> dict[str, str]:
     return {"status": "ok"}
