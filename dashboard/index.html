@@ -6,15 +6,15 @@
     <meta name="theme-color" content="#173a35" />
     <title>Eco Route | Bin Operations</title>
     <link rel="stylesheet" href="/dashboard/static/styles.css" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" />
     <script src="/dashboard/static/app.js" defer></script>
   </head>
   <body>
     <header class="topbar">
       <a class="brand" href="/dashboard" aria-label="Eco Route dashboard">
-        <span class="brand-mark" aria-hidden="true">ER</span>
+        <i class="fa-solid fa-leaf brand-icon" aria-hidden="true"></i>
         <span class="brand-copy">
           <strong>Eco Route</strong>
-          <span>Bin operations</span>
         </span>
       </a>
       <div class="topbar-tools">
@@ -25,7 +25,7 @@
         <span class="updated-at" id="updated-at">Waiting for data</span>
         <div class="topbar-actions">
           <button class="refresh-button" id="refresh-button" type="button">
-            Refresh
+            <i class="fa-solid fa-rotate-right" aria-hidden="true"></i> Refresh
           </button>
           <button
             class="delete-data-button"
@@ -61,22 +61,22 @@
 
       <section class="metric-grid" aria-label="Network summary">
         <article class="metric">
-          <span class="metric-label">Registered bins</span>
+          <span class="metric-label"><i class="fa-solid fa-trash-can" aria-hidden="true"></i> Registered bins</span>
           <strong class="metric-value" id="bin-count">--</strong>
           <span class="metric-foot">In the cloud registry</span>
         </article>
         <article class="metric">
-          <span class="metric-label">Readings received</span>
+          <span class="metric-label"><i class="fa-solid fa-signal" aria-hidden="true"></i> Readings received</span>
           <strong class="metric-value" id="reading-count">--</strong>
           <span class="metric-foot">Stored measurements</span>
         </article>
         <article class="metric">
-          <span class="metric-label">Average fill</span>
+          <span class="metric-label"><i class="fa-solid fa-gauge-high" aria-hidden="true"></i> Average fill</span>
           <strong class="metric-value" id="average-fill">--</strong>
           <span class="metric-foot">Latest reading per bin</span>
         </article>
         <article class="metric metric-alerts">
-          <span class="metric-label">Alerts raised</span>
+          <span class="metric-label"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i> Alerts raised</span>
           <strong class="metric-value" id="alert-count">--</strong>
           <span class="metric-foot">Fill level above 80%</span>
         </article>
@@ -86,7 +86,7 @@
         <div class="panel-heading">
           <div>
             <p class="eyebrow">Reading path</p>
-            <h2 id="pipeline-title">System pipeline</h2>
+            <h2 id="pipeline-title"><i class="fa-solid fa-microchip" aria-hidden="true"></i> System pipeline</h2>
           </div>
           <span class="panel-note">Secure, validated telemetry flow</span>
         </div>
@@ -95,6 +95,7 @@
             <div class="pipeline-step-heading">
               <span class="step-index">01</span>
               <strong>Device tier</strong>
+              <i class="fa-solid fa-microchip step-icon" aria-hidden="true"></i>
             </div>
             <div class="pipeline-details">
               <span>Simulator fleet</span>
@@ -112,6 +113,7 @@
             <div class="pipeline-step-heading">
               <span class="step-index">02</span>
               <strong>Gateway</strong>
+              <i class="fa-solid fa-shield-halved step-icon" aria-hidden="true"></i>
             </div>
             <div class="pipeline-details">
               <span>Authenticates devices</span>
@@ -129,6 +131,7 @@
             <div class="pipeline-step-heading">
               <span class="step-index">03</span>
               <strong>Cloud API</strong>
+              <i class="fa-solid fa-cloud step-icon" aria-hidden="true"></i>
             </div>
             <div class="pipeline-details">
               <span>FastAPI REST API</span>
@@ -149,7 +152,7 @@
           <div class="panel-heading">
             <div>
               <p class="eyebrow">Bin status</p>
-              <h2 id="current-title">Current reading</h2>
+              <h2 id="current-title"><i class="fa-solid fa-trash-can" aria-hidden="true"></i> Current reading</h2>
             </div>
             <label class="select-wrap" for="bin-select">
               <span class="visually-hidden">Select a bin</span>
@@ -193,7 +196,7 @@
           <div class="panel-heading">
             <div>
               <p class="eyebrow">Needs attention</p>
-              <h2 id="alerts-title">Recent alerts</h2>
+              <h2 id="alerts-title"><i class="fa-solid fa-bell" aria-hidden="true"></i> Recent alerts</h2>
             </div>
             <span class="count-badge" id="visible-alert-count">0</span>
           </div>
@@ -207,7 +210,7 @@
         <div class="panel-heading">
           <div>
             <p class="eyebrow">Cloud records</p>
-            <h2 id="activity-title">Recent readings</h2>
+            <h2 id="activity-title"><i class="fa-solid fa-table-list" aria-hidden="true"></i> Recent readings</h2>
           </div>
           <span class="panel-note" id="activity-count">Latest 8</span>
         </div>
@@ -215,10 +218,10 @@
           <table>
             <thead>
               <tr>
-                <th scope="col">Bin</th>
-                <th scope="col">Fill</th>
-                <th scope="col">Received at</th>
-                <th scope="col">Status</th>
+                <th scope="col"><i class="fa-solid fa-trash-can" aria-hidden="true"></i> Bin</th>
+                <th scope="col"><i class="fa-solid fa-gauge-high" aria-hidden="true"></i> Fill</th>
+                <th scope="col"><i class="fa-solid fa-clock" aria-hidden="true"></i> Received at</th>
+                <th scope="col"><i class="fa-solid fa-circle-check" aria-hidden="true"></i> Status</th>
               </tr>
             </thead>
             <tbody id="reading-rows">

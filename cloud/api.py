@@ -6,9 +6,9 @@ import os
 from contextlib import asynccontextmanager
 from dataclasses import replace
 from pathlib import Path
-from typing import AsyncGenerator
+from typing import AsyncGenerator, Literal
 
-from fastapi import FastAPI, HTTPException, Request, status
+from fastapi import Depends, FastAPI, Header, HTTPException, Request, status
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
@@ -91,10 +91,14 @@ class ReadingInput(BaseModel):
 class EncryptedReadingEnvelope(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    session_id: str = Field(min_length=1)
+    version: Literal["legacy", "pqe-v1"] = "legacy"
+    # Legacy path: only payload_b64 is needed
+    payload_b64: str | None = None
+    # PQE / existing decrypt path
+    session_id: str | None = None
     kem_ciphertext_b64: str | None = None
-    nonce_b64: str = Field(min_length=1)
-    ciphertext_b64: str = Field(min_length=1)
+    nonce_b64: str | None = None
+    ciphertext_b64: str | None = None
 
 
 class ReadingResponse(BaseModel):
@@ -125,6 +129,22 @@ def _measurement_service(request: Request) -> MeasurementService:
 
 def _cloud_service(request: Request) -> CloudService:
     return request.app.state.cloud_service
+
+
+def _require_device_auth(
+    x_device_api_key: str | None = Header(default=None, alias="X-Device-API-Key"),
+) -> None:
+    """FastAPI dependency: enforce X-Device-API-Key header when auth is enabled."""
+    require_auth = os.getenv("REQUIRE_DEVICE_AUTH", "true").strip().lower()
+    if require_auth == "false":
+        return
+    raw_keys = os.getenv("DEVICE_API_KEYS", "")
+    valid_keys = {k.strip() for k in raw_keys.split(",") if k.strip()}
+    if not x_device_api_key or x_device_api_key not in valid_keys:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or missing X-Device-API-Key",
+        )
 
 
 @app.get("/crypto/public-key")
@@ -209,9 +229,42 @@ def list_alerts(request: Request) -> list[Alert]:
 def create_reading(
     payload: EncryptedReadingEnvelope,
     request: Request,
+    _auth: None = Depends(_require_device_auth),
 ) -> BinReading:
+    # Version dispatch
+    if payload.version == "pqe-v1":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="pqe-v1 readings must arrive via the gateway",
+        )
+
+    if payload.version == "legacy" and payload.payload_b64 is not None:
+        # Legacy Base64 path
+        try:
+            decoded = BinReading.from_legacy_b64(payload.payload_b64)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=str(exc),
+            ) from exc
+        reading_input = ReadingInput(
+            bin_id=decoded.bin_id,
+            fill_level=decoded.fill_level,
+            recorded_at=decoded.recorded_at,
+        )
+        reading = BinReading.create(reading_input.bin_id, reading_input.fill_level)
+        reading = replace(reading, recorded_at=decoded.recorded_at)
+        try:
+            return _measurement_service(request).save_measurement(reading)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=str(exc),
+            ) from exc
+
+    # Existing decrypt path (legacy version with no payload_b64, or default flow)
     try:
-        payload = ReadingInput.model_validate(
+        reading_input = ReadingInput.model_validate(
             _cloud_service(request).decrypt_reading(
                 payload.model_dump(exclude_none=True)
             )
@@ -232,9 +285,9 @@ def create_reading(
             detail=str(exc),
         ) from exc
 
-    reading = BinReading.create(payload.bin_id, payload.fill_level)
-    if payload.recorded_at is not None:
-        reading = replace(reading, recorded_at=payload.recorded_at)
+    reading = BinReading.create(reading_input.bin_id, reading_input.fill_level)
+    if reading_input.recorded_at is not None:
+        reading = replace(reading, recorded_at=reading_input.recorded_at)
 
     try:
         return _measurement_service(request).save_measurement(reading)

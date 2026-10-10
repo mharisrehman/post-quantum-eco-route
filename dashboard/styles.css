@@ -57,18 +57,9 @@ select {
   text-decoration: none;
 }
 
-.brand-mark {
-  width: 40px;
-  height: 40px;
-  display: grid;
-  place-items: center;
-  border: 1px solid #72c5a9;
-  border-radius: 12px;
-  color: #a9e4ce;
-  font-family: "Manrope", sans-serif;
-  font-size: 13px;
-  font-weight: 800;
-}
+.brand-icon { font-size: 24px; color: #a9e4ce; }
+.step-icon  { font-size: 18px; color: var(--green); margin-bottom: 4px; }
+.metric-label i, h2 i, th i { opacity: 0.85; }
 
 .brand-copy,
 .topbar-tools {

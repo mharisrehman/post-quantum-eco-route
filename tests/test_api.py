@@ -19,6 +19,7 @@ def services(monkeypatch: pytest.MonkeyPatch) -> tuple[Mock, Mock]:
     measurement_service = Mock(spec=MeasurementService)
 
     monkeypatch.setenv("DATABASE_URL", "postgresql://test/test")
+    monkeypatch.setenv("REQUIRE_DEVICE_AUTH", "false")
     monkeypatch.setattr(api, "Database", Mock(return_value=database))
     monkeypatch.setattr(api, "BinService", Mock(return_value=bin_service))
     monkeypatch.setattr(
@@ -212,6 +213,7 @@ def test_create_reading_decrypts_envelope_before_saving(
     assert response.json()["bin_id"] == "bin-1"
     cloud_service.decrypt_reading.assert_called_once_with(
         {
+            "version": "legacy",
             "session_id": "cloud-session",
             "kem_ciphertext_b64": "a2Vt",
             "nonce_b64": "bm9uY2U=",
@@ -223,11 +225,13 @@ def test_create_reading_decrypts_envelope_before_saving(
     assert saved_reading.fill_level == 75
 
 
-def test_create_reading_rejects_base64_only_payload(
+def test_create_reading_accepts_legacy_base64_payload(
     client: TestClient,
     services: tuple[Mock, Mock],
 ) -> None:
     _, measurement_service = services
+    saved = BinReading("bin-1", 30, "2026-01-01T00:00:00+00:00", id=5)
+    measurement_service.save_measurement.return_value = saved
 
     response = client.post(
         "/readings",
@@ -238,8 +242,8 @@ def test_create_reading_rejects_base64_only_payload(
         },
     )
 
-    assert response.status_code == 422
-    measurement_service.save_measurement.assert_not_called()
+    assert response.status_code == 201
+    measurement_service.save_measurement.assert_called_once()
 
 
 def test_create_reading_rejects_invalid_fill_level(
