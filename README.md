@@ -97,18 +97,4 @@ instrumented.
 docker compose up --build
 ```
 
-Compose starts PostgreSQL, the cloud API, the gateway, and the device
-simulator. For local testing, Compose supplies development-only device keys
-for `bin-1`, `bin-2`, and `bin-3`. Set `DEVICE_API_KEYS` in the root `.env`
-file to override them; use unique, secret values outside local testing. View
-stored readings at `GET /readings` and alerts at `GET /alerts`.
 
-The cloud and gateway persist their ML-KEM key pairs in files under
-`CLOUD_ML_KEM_KEY_FILE` and `GATEWAY_ML_KEM_KEY_FILE`. Compose mounts separate
-named volumes for these files so the gateway cannot read the cloud private
-key; preserve both volumes across deployments to keep public keys stable.
-Files are created with owner-only permissions on POSIX systems. Explicit
-gateway key environment variables remain available for externally provisioned
-keys. HTTPS remains deferred as requested, so use this setup only on a trusted
-network. Production deployments should protect both key volumes, provision
-strong device API keys, and enable HTTPS.
