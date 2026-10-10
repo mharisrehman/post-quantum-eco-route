@@ -132,7 +132,9 @@ def _cloud_service(request: Request) -> CloudService:
 
 
 def _require_device_auth(
-    x_device_api_key: str | None = Header(default=None, alias="X-Device-API-Key"),
+    x_device_api_key: str | None = Header(
+        default=None, alias="X-Device-API-Key"
+    ),
 ) -> None:
     """FastAPI dependency: enforce X-Device-API-Key header when auth is enabled."""
     require_auth = os.getenv("REQUIRE_DEVICE_AUTH", "true").strip().lower()
@@ -259,7 +261,9 @@ def create_reading(
             fill_level=decoded.fill_level,
             recorded_at=decoded.recorded_at,
         )
-        reading = BinReading.create(reading_input.bin_id, reading_input.fill_level)
+        reading = BinReading.create(
+            reading_input.bin_id, reading_input.fill_level
+        )
         reading = replace(reading, recorded_at=decoded.recorded_at)
         try:
             return _measurement_service(request).save_measurement(reading)

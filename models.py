@@ -60,7 +60,9 @@ class BinReading:
         try:
             data = json.loads(decoded.decode("utf-8"))
         except (json.JSONDecodeError, UnicodeDecodeError) as exc:
-            raise ValueError("payload_b64 must decode to a JSON object") from exc
+            raise ValueError(
+                "payload_b64 must decode to a JSON object"
+            ) from exc
 
         if not isinstance(data, dict):
             raise ValueError("payload_b64 must decode to a JSON object")
