@@ -5,11 +5,21 @@ from __future__ import annotations
 import base64
 import json
 import os
+import uuid
+from dataclasses import dataclass
 from typing import Protocol
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 from ml_kem_crypto import MlKemSession
+
+
+@dataclass
+class _DeviceSession:
+    session_id: str
+    kem_ciphertext: bytes
+    crypto: MlKemSession
+    initialized: bool = False
 
 
 class ReadingPayload(Protocol):
@@ -28,6 +38,7 @@ class DeviceService:
             if device_api_keys is not None
             else self._read_device_api_keys()
         )
+        self._sessions: dict[str, _DeviceSession] = {}
 
     @staticmethod
     def _read_device_api_keys() -> dict[str, str]:
@@ -72,16 +83,25 @@ class DeviceService:
             raise RuntimeError(
                 f"No API key configured for device '{device_id}'"
             )
-        public_key = self._read_public_key()
-        session = MlKemSession()
-        kem_ciphertext, shared_secret = session.encapsulate(public_key)
-        session.set_session_key(shared_secret)
-        encrypted_message = session.encrypt(reading_json, kem_ciphertext)
-        envelope = json.dumps(
-            {
-                "kem_ciphertext": base64.b64encode(
-                    encrypted_message.kem_ciphertext
-                ).decode("ascii"),
+        for attempt in range(2):
+            device_session = self._sessions.get(device_id)
+            if device_session is None:
+                public_key = self._read_public_key()
+                crypto = MlKemSession()
+                kem_ciphertext, shared_secret = crypto.encapsulate(public_key)
+                crypto.set_session_key(shared_secret)
+                device_session = _DeviceSession(
+                    session_id=str(uuid.uuid4()),
+                    kem_ciphertext=kem_ciphertext,
+                    crypto=crypto,
+                )
+                self._sessions[device_id] = device_session
+
+            encrypted_message = device_session.crypto.encrypt(
+                reading_json, device_session.kem_ciphertext
+            )
+            payload = {
+                "session_id": device_session.session_id,
                 "nonce": base64.b64encode(encrypted_message.nonce).decode(
                     "ascii"
                 ),
@@ -89,22 +109,35 @@ class DeviceService:
                     encrypted_message.ciphertext
                 ).decode("ascii"),
             }
-        ).encode("utf-8")
-        request = Request(
-            f"{self._gateway_url}/readings",
-            data=envelope,
-            headers={
-                "Content-Type": "application/json",
-                "X-Device-ID": device_id,
-                "X-API-Key": api_key,
-            },
-            method="POST",
-        )
-        with urlopen(request, timeout=10) as response:
-            if response.status != 201:
-                raise RuntimeError(
-                    f"Gateway returned unexpected status {response.status}"
-                )
+            if not device_session.initialized:
+                payload["kem_ciphertext"] = base64.b64encode(
+                    device_session.kem_ciphertext
+                ).decode("ascii")
+            request = Request(
+                f"{self._gateway_url}/readings",
+                data=json.dumps(payload).encode("utf-8"),
+                headers={
+                    "Content-Type": "application/json",
+                    "X-Device-ID": device_id,
+                    "X-API-Key": api_key,
+                },
+                method="POST",
+            )
+            try:
+                with urlopen(request, timeout=10) as response:
+                    if response.status != 201:
+                        raise RuntimeError(
+                            "Gateway returned unexpected status "
+                            f"{response.status}"
+                        )
+                device_session.initialized = True
+                return
+            except HTTPError as exc:
+                if exc.code == 410 and attempt == 0:
+                    self._sessions.pop(device_id, None)
+                    continue
+                raise
+        raise RuntimeError("Gateway ML-KEM session could not be established")
 
     def publish_reading(self, reading: ReadingPayload) -> None:
         reading_json = json.dumps(

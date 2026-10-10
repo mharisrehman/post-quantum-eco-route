@@ -14,6 +14,7 @@ import gateway
 @pytest.fixture
 def client() -> TestClient:
     gateway.app.state.seen_envelopes = {}
+    gateway.app.state.device_sessions = {}
     return TestClient(gateway.app)
 
 
@@ -25,13 +26,20 @@ def test_healthcheck(client: TestClient) -> None:
 
 
 def test_forward_to_cloud_posts_mlkem_envelope() -> None:
-    response = Mock(status=201)
-    response.read.return_value = b'{"id":1,"bin_id":"bin-1"}'
-    response.__enter__ = Mock(return_value=response)
-    response.__exit__ = Mock(return_value=None)
+    gateway.app.state.cloud_session = None
+    responses = []
+    for _ in range(2):
+        response = Mock(status=201)
+        response.read.return_value = b'{"id":1,"bin_id":"bin-1"}'
+        response.__enter__ = Mock(return_value=response)
+        response.__exit__ = Mock(return_value=None)
+        responses.append(response)
 
     class FakeSession:
+        encapsulate_calls = 0
+
         def encapsulate(self, public_key: bytes) -> tuple[bytes, bytes]:
+            self.encapsulate_calls += 1
             assert public_key == b"cloud-public-key"
             return b"kem-ciphertext", b"shared-secret"
 
@@ -53,29 +61,41 @@ def test_forward_to_cloud_posts_mlkem_envelope() -> None:
     with (
         patch(
             "gateway.read_cloud_public_key", return_value=b"cloud-public-key"
-        ),
-        patch("gateway.MlKemSession", return_value=FakeSession()),
-        patch("gateway.urlopen", return_value=response) as urlopen,
+        ) as read_key,
+        patch(
+            "gateway.MlKemSession", return_value=FakeSession()
+        ) as session_type,
+        patch("gateway.urlopen", side_effect=responses) as urlopen,
     ):
-        gateway.forward_to_cloud(
-            gateway.ReadingPayload(
-                bin_id="bin-1",
-                fill_level=42,
-                recorded_at=datetime.now(timezone.utc).isoformat(),
-            )
+        reading = gateway.ReadingPayload(
+            bin_id="bin-1",
+            fill_level=42,
+            recorded_at=datetime.now(timezone.utc).isoformat(),
         )
+        gateway.forward_to_cloud(reading)
+        gateway.forward_to_cloud(reading)
 
     request = urlopen.call_args.args[0]
     assert isinstance(request, Request)
-    envelope = json.loads(request.data)
-    assert set(envelope) == {
+    first_request = urlopen.call_args_list[0].args[0]
+    first_envelope = json.loads(first_request.data)
+    assert set(first_envelope) == {
+        "session_id",
         "kem_ciphertext_b64",
         "nonce_b64",
         "ciphertext_b64",
     }
-    assert base64.b64decode(envelope["kem_ciphertext_b64"]) == b"kem-ciphertext"
-    assert base64.b64decode(envelope["nonce_b64"]) == b"123456789012"
+    envelope = json.loads(request.data)
+    assert set(envelope) == {"session_id", "nonce_b64", "ciphertext_b64"}
+    assert envelope["session_id"] == first_envelope["session_id"]
+    assert (
+        base64.b64decode(first_envelope["kem_ciphertext_b64"])
+        == b"kem-ciphertext"
+    )
+    assert base64.b64decode(first_envelope["nonce_b64"]) == b"123456789012"
     assert base64.b64decode(envelope["ciphertext_b64"]) == b"encrypted-reading"
+    read_key.assert_called_once_with()
+    assert session_type.return_value.encapsulate_calls == 1
 
 
 def test_readings_accepts_authenticated_mlkem_json(
@@ -89,8 +109,9 @@ def test_readings_accepts_authenticated_mlkem_json(
             assert ciphertext == b"kem-ciphertext"
             return b"shared-secret"
 
-        def set_session_key(self, shared_secret: bytes) -> None:
+        def new_session(self, shared_secret: bytes) -> object:
             assert shared_secret == b"shared-secret"
+            return self
 
         def decrypt(self, message: object) -> bytes:
             return json.dumps(
@@ -102,6 +123,7 @@ def test_readings_accepts_authenticated_mlkem_json(
             ).encode("utf-8")
 
     payload = {
+        "session_id": "device-session",
         "kem_ciphertext": base64.b64encode(b"kem-ciphertext").decode("ascii"),
         "nonce": base64.b64encode(b"123456789012").decode("ascii"),
         "aes_ciphertext": base64.b64encode(b"aes-ciphertext").decode("ascii"),
@@ -160,6 +182,10 @@ def test_readings_bind_bin_id_to_authenticated_device(
         def decapsulate(self, ciphertext: bytes) -> bytes:
             return b"shared-secret"
 
+        def new_session(self, shared_secret: bytes) -> object:
+            assert shared_secret == b"shared-secret"
+            return self
+
         def set_session_key(self, shared_secret: bytes) -> None:
             pass
 
@@ -173,6 +199,7 @@ def test_readings_bind_bin_id_to_authenticated_device(
             ).encode("utf-8")
 
     payload = {
+        "session_id": "binding-session",
         "kem_ciphertext": base64.b64encode(b"kem-ciphertext").decode("ascii"),
         "nonce": base64.b64encode(b"123456789012").decode("ascii"),
         "aes_ciphertext": base64.b64encode(b"aes-ciphertext").decode("ascii"),
@@ -204,6 +231,10 @@ def test_readings_reject_stale_timestamp(
             assert ciphertext == b"kem-ciphertext"
             return b"shared-secret" * 4
 
+        def new_session(self, shared_secret: bytes) -> object:
+            assert shared_secret == b"shared-secret" * 4
+            return self
+
         def set_session_key(self, shared_secret: bytes) -> None:
             assert shared_secret == b"shared-secret" * 4
 
@@ -217,6 +248,7 @@ def test_readings_reject_stale_timestamp(
             ).encode("utf-8")
 
     payload = {
+        "session_id": "stale-session",
         "kem_ciphertext": base64.b64encode(b"kem-ciphertext").decode("ascii"),
         "nonce": base64.b64encode(b"123456789012").decode("ascii"),
         "aes_ciphertext": base64.b64encode(b"aes-ciphertext").decode("ascii"),
@@ -246,6 +278,10 @@ def test_readings_reject_replayed_envelope(
         def decapsulate(self, ciphertext: bytes) -> bytes:
             return b"shared-secret"
 
+        def new_session(self, shared_secret: bytes) -> object:
+            assert shared_secret == b"shared-secret"
+            return self
+
         def set_session_key(self, shared_secret: bytes) -> None:
             pass
 
@@ -259,6 +295,7 @@ def test_readings_reject_replayed_envelope(
             ).encode("utf-8")
 
     payload = {
+        "session_id": "replay-session",
         "kem_ciphertext": base64.b64encode(b"kem-ciphertext").decode("ascii"),
         "nonce": base64.b64encode(b"123456789012").decode("ascii"),
         "aes_ciphertext": base64.b64encode(b"aes-ciphertext").decode("ascii"),

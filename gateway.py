@@ -6,7 +6,10 @@ import hashlib
 import hmac
 import json
 import os
+import uuid
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
@@ -15,20 +18,11 @@ from fastapi import FastAPI, HTTPException, Request as FastAPIRequest
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-try:
-    from ml_kem_crypto import EncryptedMessage, MlKemSession
-except ModuleNotFoundError:
-    import importlib.util
-    from pathlib import Path
-
-    module_path = Path(__file__).with_name("ml-kem_crypto.py")
-    spec = importlib.util.spec_from_file_location("ml_kem_crypto", module_path)
-    if spec is None or spec.loader is None:
-        raise
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    EncryptedMessage = module.EncryptedMessage
-    MlKemSession = module.MlKemSession
+from ml_kem_crypto import (
+    EncryptedMessage,
+    MlKemSession,
+    load_or_create_keypair,
+)
 
 DEFAULT_CLOUD_API_URL = "http://localhost:8000"
 CLOUD_API_URL = os.getenv("CLOUD_API_URL", DEFAULT_CLOUD_API_URL).rstrip("/")
@@ -46,6 +40,15 @@ class ReadingPayload(BaseModel):
     recorded_at: str
 
 
+@dataclass
+class _ReadingSession:
+    session_id: str
+    crypto: MlKemSession
+    kem_ciphertext: bytes
+    device_id: str | None = None
+    initialized: bool = False
+
+
 def get_ml_kem_session() -> Any:
     session = getattr(app.state, "ml_kem_session", None)
     if session is None:
@@ -58,18 +61,26 @@ def get_ml_kem_session() -> Any:
             )
         if private_key_b64 and public_key_b64:
             try:
-                session._private_key = base64.b64decode(
-                    private_key_b64, validate=True
-                )
-                app.state.gateway_public_key = base64.b64decode(
-                    public_key_b64, validate=True
-                )
+                private_key = base64.b64decode(private_key_b64, validate=True)
+                public_key = base64.b64decode(public_key_b64, validate=True)
+                session.load_keypair(public_key, private_key)
+                app.state.gateway_public_key = public_key
             except (binascii.Error, ValueError) as exc:
                 raise RuntimeError(
                     "Gateway ML-KEM keys must be valid Base64"
                 ) from exc
         else:
-            app.state.gateway_public_key = session.create_keypair()
+            key_file = Path(
+                os.getenv(
+                    "GATEWAY_ML_KEM_KEY_FILE",
+                    Path(__file__).resolve().parent
+                    / ".data"
+                    / "gateway-ml-kem-768.json",
+                )
+            )
+            app.state.gateway_public_key = load_or_create_keypair(
+                session, key_file
+            )
         app.state.ml_kem_session = session
     return session
 
@@ -104,24 +115,32 @@ def authenticate_device(request: FastAPIRequest) -> str:
     return device_id
 
 
-def decode_ml_kem_payload(payload: dict[str, object]) -> dict[str, object]:
-    allowed_keys = {"kem_ciphertext", "nonce", "aes_ciphertext"}
-    if set(payload) != allowed_keys:
+def decode_ml_kem_payload(
+    payload: dict[str, object], device_id: str
+) -> dict[str, object]:
+    required_keys = {"session_id", "nonce", "aes_ciphertext"}
+    if not required_keys.issubset(payload) or set(payload) not in (
+        required_keys,
+        required_keys | {"kem_ciphertext"},
+    ):
         raise HTTPException(
             status_code=400,
             detail=(
-                "ML-KEM requests must contain only kem_ciphertext, "
-                "nonce and aes_ciphertext fields"
+                "Encrypted readings require session_id, nonce and "
+                "aes_ciphertext, with kem_ciphertext only when starting "
+                "a session"
             ),
         )
 
     try:
-        kem_ciphertext = base64.b64decode(
-            payload["kem_ciphertext"], validate=True
-        )
         nonce = base64.b64decode(payload["nonce"], validate=True)
         aes_ciphertext = base64.b64decode(
             payload["aes_ciphertext"], validate=True
+        )
+        kem_ciphertext = (
+            base64.b64decode(payload["kem_ciphertext"], validate=True)
+            if "kem_ciphertext" in payload
+            else None
         )
     except (TypeError, ValueError, binascii.Error) as exc:
         raise HTTPException(
@@ -129,25 +148,61 @@ def decode_ml_kem_payload(payload: dict[str, object]) -> dict[str, object]:
             detail="ML-KEM payload fields must be valid Base64",
         ) from exc
 
-    session = get_ml_kem_session()
-    if (
-        isinstance(session, MlKemSession)
-        and getattr(session, "_private_key", None) is None
+    session_id = payload["session_id"]
+    if not isinstance(session_id, str) or not session_id:
+        raise HTTPException(
+            status_code=400, detail="session_id must be a non-empty string"
+        )
+
+    sessions: dict[str, _ReadingSession] = getattr(
+        app.state, "device_sessions", {}
+    )
+    reading_session = sessions.get(session_id)
+    if reading_session is None:
+        if kem_ciphertext is None:
+            raise HTTPException(
+                status_code=410,
+                detail="Unknown ML-KEM session; restart the key exchange",
+            )
+        key_session = get_ml_kem_session()
+        if (
+            isinstance(key_session, MlKemSession)
+            and getattr(key_session, "_private_key", None) is None
+        ):
+            raise HTTPException(
+                status_code=500,
+                detail="Gateway ML-KEM private key is not configured",
+            )
+        try:
+            shared_secret = key_session.decapsulate(kem_ciphertext)
+            reading_session = _ReadingSession(
+                session_id=session_id,
+                crypto=key_session.new_session(shared_secret),
+                kem_ciphertext=kem_ciphertext,
+                device_id=device_id,
+            )
+            sessions[session_id] = reading_session
+            app.state.device_sessions = sessions
+        except Exception as exc:  # pragma: no cover - pqcrypto errors vary
+            raise HTTPException(
+                status_code=400,
+                detail="ML-KEM payload could not be decrypted",
+            ) from exc
+    elif reading_session.device_id != device_id or (
+        kem_ciphertext is not None
+        and kem_ciphertext != reading_session.kem_ciphertext
     ):
         raise HTTPException(
-            status_code=500,
-            detail="Gateway ML-KEM private key is not configured",
+            status_code=400, detail="ML-KEM session does not match the device"
         )
 
     try:
-        shared_secret = session.decapsulate(kem_ciphertext)
-        session.set_session_key(shared_secret)
-        plaintext = session.decrypt(
-            EncryptedMessage(kem_ciphertext, nonce, aes_ciphertext)
+        plaintext = reading_session.crypto.decrypt(
+            EncryptedMessage(
+                reading_session.kem_ciphertext, nonce, aes_ciphertext
+            )
         )
-    except (
-        Exception
-    ) as exc:  # pragma: no cover - defensive; real pqcrypto errors vary
+    except Exception as exc:  # pragma: no cover - AES-GCM errors vary
         raise HTTPException(
             status_code=400,
             detail="ML-KEM payload could not be decrypted",
@@ -171,16 +226,27 @@ def decode_ml_kem_payload(payload: dict[str, object]) -> dict[str, object]:
 
 def forward_to_cloud(reading: ReadingPayload) -> dict[str, object]:
     reading_json = reading.model_dump_json(exclude_none=True).encode("utf-8")
-    cloud_public_key = read_cloud_public_key()
-    session = MlKemSession()
-    kem_ciphertext, shared_secret = session.encapsulate(cloud_public_key)
-    session.set_session_key(shared_secret)
-    encrypted_message = session.encrypt(reading_json, kem_ciphertext)
-    payload = json.dumps(
-        {
-            "kem_ciphertext_b64": base64.b64encode(
-                encrypted_message.kem_ciphertext
-            ).decode("ascii"),
+    cloud_session: _ReadingSession | None = getattr(
+        app.state, "cloud_session", None
+    )
+    if cloud_session is None:
+        cloud_public_key = read_cloud_public_key()
+        crypto = MlKemSession()
+        kem_ciphertext, shared_secret = crypto.encapsulate(cloud_public_key)
+        crypto.set_session_key(shared_secret)
+        cloud_session = _ReadingSession(
+            session_id=str(uuid.uuid4()),
+            crypto=crypto,
+            kem_ciphertext=kem_ciphertext,
+        )
+        app.state.cloud_session = cloud_session
+
+    for attempt in range(2):
+        encrypted_message = cloud_session.crypto.encrypt(
+            reading_json, cloud_session.kem_ciphertext
+        )
+        envelope: dict[str, str] = {
+            "session_id": cloud_session.session_id,
             "nonce_b64": base64.b64encode(encrypted_message.nonce).decode(
                 "ascii"
             ),
@@ -188,30 +254,56 @@ def forward_to_cloud(reading: ReadingPayload) -> dict[str, object]:
                 encrypted_message.ciphertext
             ).decode("ascii"),
         }
-    ).encode("utf-8")
-    request = Request(
-        f"{CLOUD_API_URL}/readings",
-        data=payload,
-        headers={"Content-Type": "application/json"},
-        method="POST",
-    )
-    try:
-        with urlopen(request, timeout=HTTP_TIMEOUT_SECONDS) as response:
-            if response.status != 201:
-                raise HTTPException(
-                    status_code=502,
-                    detail=f"Cloud API returned unexpected status {response.status}",
+        if not cloud_session.initialized:
+            envelope["kem_ciphertext_b64"] = base64.b64encode(
+                cloud_session.kem_ciphertext
+            ).decode("ascii")
+        request = Request(
+            f"{CLOUD_API_URL}/readings",
+            data=json.dumps(envelope).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        try:
+            with urlopen(request, timeout=HTTP_TIMEOUT_SECONDS) as response:
+                if response.status != 201:
+                    raise HTTPException(
+                        status_code=502,
+                        detail=(
+                            "Cloud API returned unexpected status "
+                            f"{response.status}"
+                        ),
+                    )
+                cloud_session.initialized = True
+                return json.loads(response.read().decode("utf-8"))
+        except HTTPError as exc:
+            if exc.code == 409 and cloud_session.initialized and attempt == 0:
+                cloud_session = None
+                app.state.cloud_session = None
+                cloud_public_key = read_cloud_public_key()
+                crypto = MlKemSession()
+                kem_ciphertext, shared_secret = crypto.encapsulate(
+                    cloud_public_key
                 )
-            return json.loads(response.read().decode("utf-8"))
-    except HTTPError as exc:
-        raise HTTPException(
-            status_code=502,
-            detail=f"Cloud API rejected the reading with status {exc.code}",
-        ) from exc
-    except URLError as exc:
-        raise HTTPException(
-            status_code=502, detail="Cloud API could not be reached"
-        ) from exc
+                crypto.set_session_key(shared_secret)
+                cloud_session = _ReadingSession(
+                    session_id=str(uuid.uuid4()),
+                    crypto=crypto,
+                    kem_ciphertext=kem_ciphertext,
+                )
+                app.state.cloud_session = cloud_session
+                continue
+            raise HTTPException(
+                status_code=502,
+                detail=f"Cloud API rejected the reading with status {exc.code}",
+            ) from exc
+        except URLError as exc:
+            raise HTTPException(
+                status_code=502, detail="Cloud API could not be reached"
+            ) from exc
+    raise HTTPException(
+        status_code=502, detail="Cloud API session could not be established"
+    )
 
 
 def read_cloud_public_key() -> bytes:
@@ -336,7 +428,10 @@ async def receive_reading(request: FastAPIRequest) -> JSONResponse:
             status_code=400, detail="Request body must be a JSON object"
         )
 
-    if set(body) != {"kem_ciphertext", "nonce", "aes_ciphertext"}:
+    if set(body) not in (
+        {"session_id", "kem_ciphertext", "nonce", "aes_ciphertext"},
+        {"session_id", "nonce", "aes_ciphertext"},
+    ):
         raise HTTPException(
             status_code=400,
             detail=(
@@ -345,7 +440,7 @@ async def receive_reading(request: FastAPIRequest) -> JSONResponse:
             ),
         )
     encrypted_body = body
-    body = decode_ml_kem_payload(body)
+    body = decode_ml_kem_payload(body, device_id)
 
     if not isinstance(body, dict):
         raise HTTPException(

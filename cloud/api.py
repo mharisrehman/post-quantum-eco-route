@@ -14,7 +14,12 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from cloud.database import Database
-from cloud.services import BinService, CloudService, MeasurementService
+from cloud.services import (
+    BinService,
+    CloudService,
+    MeasurementService,
+    UnknownSessionError,
+)
 from models import Alert, Bin, BinReading
 
 
@@ -83,16 +88,11 @@ class ReadingInput(BaseModel):
     recorded_at: str | None = None
 
 
-class ReadingEnvelope(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    payload_b64: str = Field(min_length=1)
-
-
 class EncryptedReadingEnvelope(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    kem_ciphertext_b64: str = Field(min_length=1)
+    session_id: str = Field(min_length=1)
+    kem_ciphertext_b64: str | None = None
     nonce_b64: str = Field(min_length=1)
     ciphertext_b64: str = Field(min_length=1)
 
@@ -207,40 +207,30 @@ def list_alerts(request: Request) -> list[Alert]:
     status_code=status.HTTP_201_CREATED,
 )
 def create_reading(
-    payload: ReadingInput | ReadingEnvelope | EncryptedReadingEnvelope,
+    payload: EncryptedReadingEnvelope,
     request: Request,
 ) -> BinReading:
-    if isinstance(payload, EncryptedReadingEnvelope):
-        try:
-            payload = ReadingInput.model_validate(
-                _cloud_service(request).decrypt_reading(payload.model_dump())
+    try:
+        payload = ReadingInput.model_validate(
+            _cloud_service(request).decrypt_reading(
+                payload.model_dump(exclude_none=True)
             )
-        except ValidationError as exc:
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail=exc.errors(),
-            ) from exc
-        except ValueError as exc:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=str(exc),
-            ) from exc
-    elif isinstance(payload, ReadingEnvelope):
-        try:
-            decoded_payload = _cloud_service(request).decode_reading(
-                payload.payload_b64
-            )
-            payload = ReadingInput.model_validate(decoded_payload)
-        except ValidationError as exc:
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail=exc.errors(),
-            ) from exc
-        except ValueError as exc:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=str(exc),
-            ) from exc
+        )
+    except ValidationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=exc.errors(),
+        ) from exc
+    except UnknownSessionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc),
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
 
     reading = BinReading.create(payload.bin_id, payload.fill_level)
     if payload.recorded_at is not None:

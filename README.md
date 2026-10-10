@@ -4,11 +4,11 @@ A simple Edge-Cloud simulation for municipal waste-bin monitoring and pickup opt
 
 ## Components
 
-- `device/`: sensor-device folder that generates periodic readings for multiple bins and sends them to the cloud API.
+- `device/`: sensor-device folder that generates periodic readings for multiple bins and sends them to the gateway.
 - `gateway.py`: HTTP edge gateway that authenticates devices, decrypts ML-KEM readings, and re-encrypts them for the cloud API.
-- `cloud/cloud_service.py`: decrypts ML-KEM/AES-GCM readings received from the gateway.
+- `cloud/services.py`: cloud business services, including ML-KEM/AES-GCM decryption of readings received from the gateway.
 - `dashboard/`: live admin dashboard for bin readings, alerts, and the system pipeline.
-- `ml-kem_crypto.py`: ML-KEM-768 key exchange and AES-GCM session encryption primitives.
+- `ml_kem_crypto.py`: ML-KEM-768 key exchange and AES-GCM session encryption primitives.
 - `cloud/`: PostgreSQL-backed cloud CRUD services and FastAPI REST API.
 - `cloud/api.py`: HTTP API for bin registration and measurement ingestion.
 - `cloud/database.py`: singleton PostgreSQL connection and schema adapter.
@@ -22,7 +22,7 @@ pytest
 ```
 
 Set `device/.env` from `device/.env.example` to configure
-`DEVICE_INTERVAL_SECONDS`, `DEVICE_BIN_IDS`, `CLOUD_API_URL`, and
+`DEVICE_INTERVAL_SECONDS`, `DEVICE_BIN_IDS`, `CLOUD_API_URL` (the gateway URL), and
 `DEVICE_API_KEYS`. The API key list uses comma-separated `device-id=key`
 pairs; each configured device ID must match a bin ID. Configure the same key
 map for the gateway. If `DEVICE_BIN_IDS` is unset, `DEVICE_BIN_ID` can select
@@ -47,11 +47,16 @@ python -m device.main
 
 The gateway listens at `http://localhost:8001`. Readings must use the ML-KEM
 encrypted envelope and include valid `X-Device-ID` and `X-API-Key` headers.
+Each device and gateway establishes one ML-KEM session per device/process
+session; subsequent readings reuse its AES-GCM key and send only fresh
+nonces/ciphertexts. Restarting either process establishes a new session.
 The authenticated device ID must match the decrypted reading's `bin_id`, and
 the reading timestamp must be within 60 seconds of gateway time. The gateway
 rejects plain JSON, Base64-only payloads, stale readings, and duplicate
 encrypted envelopes. It re-encrypts accepted readings with the cloud's public
-key before forwarding them.
+key before forwarding them. The cloud API also accepts only its encrypted
+session envelope, and gateway-to-cloud readings use a separate reused
+ML-KEM session.
 
 - `GET /healthz`
 - `GET|POST /bins`
@@ -98,7 +103,12 @@ for `bin-1`, `bin-2`, and `bin-3`. Set `DEVICE_API_KEYS` in the root `.env`
 file to override them; use unique, secret values outside local testing. View
 stored readings at `GET /readings` and alerts at `GET /alerts`.
 
-HTTPS remains deferred as requested, so use this setup only on a trusted
-network. Production deployments should configure durable gateway ML-KEM keys
-with `GATEWAY_ML_KEM_PUBLIC_KEY` and `GATEWAY_ML_KEM_PRIVATE_KEY`, provision
+The cloud and gateway persist their ML-KEM key pairs in files under
+`CLOUD_ML_KEM_KEY_FILE` and `GATEWAY_ML_KEM_KEY_FILE`. Compose mounts separate
+named volumes for these files so the gateway cannot read the cloud private
+key; preserve both volumes across deployments to keep public keys stable.
+Files are created with owner-only permissions on POSIX systems. Explicit
+gateway key environment variables remain available for externally provisioned
+keys. HTTPS remains deferred as requested, so use this setup only on a trusted
+network. Production deployments should protect both key volumes, provision
 strong device API keys, and enable HTTPS.

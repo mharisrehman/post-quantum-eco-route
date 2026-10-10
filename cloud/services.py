@@ -6,17 +6,28 @@ import base64
 import binascii
 import json
 import logging
+import os
+from pathlib import Path
+from typing import Any
 
 from cloud.repositories import (
     AlertRepository,
     BinReadingRepository,
     BinRepository,
 )
-from ml_kem_crypto import MlKemSession, decode_message
+from ml_kem_crypto import (
+    EncryptedMessage,
+    MlKemSession,
+    load_or_create_keypair,
+)
 from models import Alert, Bin, BinReading
 
 ALERT_THRESHOLD = 80
 logger = logging.getLogger(__name__)
+
+
+class UnknownSessionError(ValueError):
+    pass
 
 
 class BinService:
@@ -91,13 +102,29 @@ class MeasurementService:
 
 
 class CloudService:
-    def __init__(self) -> None:
-        self._session = MlKemSession()
+    def __init__(
+        self,
+        key_file: str | Path | None = None,
+        kem: Any | None = None,
+    ) -> None:
+        self._key_file = Path(
+            key_file
+            or os.getenv(
+                "CLOUD_ML_KEM_KEY_FILE",
+                Path(__file__).resolve().parents[1]
+                / ".data"
+                / "ml-kem-768.json",
+            )
+        )
+        self._session = MlKemSession(kem)
         self._public_key: bytes | None = None
+        self._sessions: dict[str, tuple[bytes, MlKemSession]] = {}
 
     def _ensure_keypair(self) -> None:
         if self._public_key is None:
-            self._public_key = self._session.create_keypair()
+            self._public_key = load_or_create_keypair(
+                self._session, self._key_file
+            )
 
     @property
     def public_key(self) -> bytes:
@@ -108,32 +135,57 @@ class CloudService:
     def decrypt_reading(self, payload: dict[str, str]) -> dict[str, object]:
         try:
             self._ensure_keypair()
-            message = decode_message(payload)
-            shared_secret = self._session.decapsulate(message.kem_ciphertext)
-            self._session.set_session_key(shared_secret)
-            decoded = self._session.decrypt(message)
+            session_id = payload["session_id"]
+            if not session_id:
+                raise ValueError("session_id must not be empty")
+            nonce = base64.b64decode(payload["nonce_b64"], validate=True)
+            ciphertext = base64.b64decode(
+                payload["ciphertext_b64"], validate=True
+            )
+            kem_ciphertext = (
+                base64.b64decode(payload["kem_ciphertext_b64"], validate=True)
+                if "kem_ciphertext_b64" in payload
+                else None
+            )
+            existing = self._sessions.get(session_id)
+            if existing is None:
+                if kem_ciphertext is None:
+                    raise UnknownSessionError(
+                        "Unknown ML-KEM session; restart the key exchange"
+                    )
+                shared_secret = self._session.decapsulate(kem_ciphertext)
+                crypto = self._session.new_session(shared_secret)
+            else:
+                original_kem_ciphertext, crypto = existing
+                if (
+                    kem_ciphertext is not None
+                    and kem_ciphertext != original_kem_ciphertext
+                ):
+                    raise ValueError("ML-KEM session ciphertext does not match")
+            decoded = crypto.decrypt(
+                EncryptedMessage(
+                    kem_ciphertext if existing is None else existing[0],
+                    nonce,
+                    ciphertext,
+                )
+            )
             reading = json.loads(decoded.decode("utf-8"))
-        except (TypeError, ValueError, KeyError, json.JSONDecodeError) as exc:
+            if existing is None:
+                assert kem_ciphertext is not None
+                self._sessions[session_id] = (kem_ciphertext, crypto)
+        except UnknownSessionError:
+            raise
+        except (
+            TypeError,
+            ValueError,
+            KeyError,
+            binascii.Error,
+            json.JSONDecodeError,
+            UnicodeDecodeError,
+        ) as exc:
             raise ValueError("Invalid encrypted reading envelope") from exc
         if not isinstance(reading, dict):
             raise ValueError("Encrypted reading must decode to a JSON object")
-        return reading
-
-    def decode_reading(self, payload_b64: str) -> dict[str, object]:
-        try:
-            decoded = base64.b64decode(payload_b64, validate=True)
-        except (binascii.Error, ValueError) as exc:
-            raise ValueError("payload_b64 must be valid Base64") from exc
-
-        try:
-            reading = json.loads(decoded.decode("utf-8"))
-        except (json.JSONDecodeError, UnicodeDecodeError) as exc:
-            raise ValueError(
-                "payload_b64 must decode to a JSON object"
-            ) from exc
-
-        if not isinstance(reading, dict):
-            raise ValueError("payload_b64 must decode to a JSON object")
         return reading
 
 

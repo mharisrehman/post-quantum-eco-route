@@ -64,9 +64,15 @@ def test_dashboard_serves_page_and_assets(client: TestClient) -> None:
 
     assert page.status_code == 200
     assert "Bin network" in page.text
+    assert "Device tier" in page.text
+    assert "Gateway" in page.text
+    assert "Cloud API" in page.text
+    assert "ML-KEM-768" in page.text
+    assert "Base64" not in page.text
     assert script.status_code == 200
     assert "refreshDashboard" in script.text
     assert stylesheet.status_code == 200
+    assert ".pipeline-hop" in stylesheet.text
 
 
 def test_list_bins(client: TestClient, services: tuple[Mock, Mock]) -> None:
@@ -157,13 +163,11 @@ def test_list_readings(client: TestClient, services: tuple[Mock, Mock]) -> None:
     ]
 
 
-def test_create_reading_passes_payload_to_service(
+def test_create_reading_rejects_plain_json(
     client: TestClient,
     services: tuple[Mock, Mock],
 ) -> None:
     _, measurement_service = services
-    saved = BinReading("bin-1", 75, "2026-01-01T00:00:00+00:00", id=2)
-    measurement_service.save_measurement.return_value = saved
 
     response = client.post(
         "/readings",
@@ -174,58 +178,67 @@ def test_create_reading_passes_payload_to_service(
         },
     )
 
-    assert response.status_code == 201
-    assert response.json() == {
-        "id": 2,
-        "bin_id": "bin-1",
-        "fill_level": 75,
-        "recorded_at": "2026-01-01T00:00:00+00:00",
-    }
-    measurement_service.save_measurement.assert_called_once_with(
-        BinReading("bin-1", 75, "2026-01-01T00:00:00+00:00")
-    )
+    assert response.status_code == 422
+    measurement_service.save_measurement.assert_not_called()
 
 
-def test_create_reading_accepts_base64_json_envelope(
+def test_create_reading_decrypts_envelope_before_saving(
     client: TestClient,
     services: tuple[Mock, Mock],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _, measurement_service = services
     saved = BinReading("bin-1", 75, "2026-01-01T00:00:00+00:00", id=3)
     measurement_service.save_measurement.return_value = saved
-    reading_json = json.dumps({"bin_id": "bin-1", "fill_level": 75}).encode(
-        "utf-8"
-    )
+    cloud_service = Mock()
+    cloud_service.decrypt_reading.return_value = {
+        "bin_id": "bin-1",
+        "fill_level": 75,
+        "recorded_at": "2026-01-01T00:00:00+00:00",
+    }
+    monkeypatch.setattr(api, "_cloud_service", lambda request: cloud_service)
 
     response = client.post(
         "/readings",
-        json={"payload_b64": base64.b64encode(reading_json).decode("ascii")},
+        json={
+            "session_id": "cloud-session",
+            "kem_ciphertext_b64": "a2Vt",
+            "nonce_b64": "bm9uY2U=",
+            "ciphertext_b64": "Y2lwaGVydGV4dA==",
+        },
     )
 
     assert response.status_code == 201
     assert response.json()["bin_id"] == "bin-1"
+    cloud_service.decrypt_reading.assert_called_once_with(
+        {
+            "session_id": "cloud-session",
+            "kem_ciphertext_b64": "a2Vt",
+            "nonce_b64": "bm9uY2U=",
+            "ciphertext_b64": "Y2lwaGVydGV4dA==",
+        }
+    )
     saved_reading = measurement_service.save_measurement.call_args.args[0]
     assert saved_reading.bin_id == "bin-1"
     assert saved_reading.fill_level == 75
 
 
-@pytest.mark.parametrize(
-    "payload_b64",
-    [
-        "not-base64!",
-        base64.b64encode(b"not json").decode("ascii"),
-    ],
-)
-def test_create_reading_rejects_invalid_base64_envelope(
+def test_create_reading_rejects_base64_only_payload(
     client: TestClient,
     services: tuple[Mock, Mock],
-    payload_b64: str,
 ) -> None:
     _, measurement_service = services
 
-    response = client.post("/readings", json={"payload_b64": payload_b64})
+    response = client.post(
+        "/readings",
+        json={
+            "payload_b64": base64.b64encode(
+                json.dumps({"bin_id": "bin-1", "fill_level": 30}).encode()
+            ).decode("ascii")
+        },
+    )
 
-    assert response.status_code == 400
+    assert response.status_code == 422
     measurement_service.save_measurement.assert_not_called()
 
 
@@ -247,15 +260,27 @@ def test_create_reading_rejects_invalid_fill_level(
 def test_create_reading_maps_unknown_bin_to_not_found(
     client: TestClient,
     services: tuple[Mock, Mock],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _, measurement_service = services
     measurement_service.save_measurement.side_effect = ValueError(
         "unknown bin device for bin_id 'missing'"
     )
+    cloud_service = Mock()
+    cloud_service.decrypt_reading.return_value = {
+        "bin_id": "missing",
+        "fill_level": 20,
+    }
+    monkeypatch.setattr(api, "_cloud_service", lambda request: cloud_service)
 
     response = client.post(
         "/readings",
-        json={"bin_id": "missing", "fill_level": 20},
+        json={
+            "session_id": "unknown-bin-session",
+            "nonce_b64": "bm9uY2U=",
+            "ciphertext_b64": "Y2lwaGVydGV4dA==",
+            "kem_ciphertext_b64": "a2Vt",
+        },
     )
 
     assert response.status_code == 404

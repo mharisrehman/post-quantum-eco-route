@@ -48,8 +48,8 @@
           </p>
         </div>
         <div class="intro-meta">
-          <div class="base64-banner" role="status">
-            <span class="base64-mark" aria-hidden="true">PQC</span>
+          <div class="m-banner" role="status">
+            <span class="m-mark" aria-hidden="true">PQC</span>
             <span>PQC MLKEM Active</span>
           </div>
           <div class="refresh-note">
@@ -88,37 +88,59 @@
             <p class="eyebrow">Reading path</p>
             <h2 id="pipeline-title">System pipeline</h2>
           </div>
-          <span class="panel-note">Latest stored reading confirms delivery</span>
+          <span class="panel-note">Secure, validated telemetry flow</span>
         </div>
-        <ol class="pipeline-list">
-          <li class="pipeline-step">
-            <span class="step-index">01</span>
-            <strong>Bin device</strong>
-            <span>Generate reading</span>
+        <ol class="pipeline-list" aria-label="Reading path from devices to cloud">
+          <li class="pipeline-step pipeline-step--device">
+            <div class="pipeline-step-heading">
+              <span class="step-index">01</span>
+              <strong>Device tier</strong>
+            </div>
+            <div class="pipeline-details">
+              <span>Simulator fleet</span>
+              <span>Fill level 0 to 100</span>
+              <span>AES-256-GCM encryption</span>
+              <span>Sends device ID + key</span>
+            </div>
           </li>
-          <li class="pipeline-step">
-            <span class="step-index">02</span>
-            <strong>Device service</strong>
-            <span>Base64 encode</span>
+          <li class="pipeline-hop" aria-label="Hop 1 encryption">
+            <span class="hop-label">Hop 1</span>
+            <strong>ML-KEM-768</strong>
+            <span>AES-256-GCM</span>
           </li>
-          <li class="pipeline-step">
-            <span class="step-index">03</span>
-            <strong>Gateway</strong>
-            <span>Decode, validate, encode</span>
+          <li class="pipeline-step pipeline-step--gateway">
+            <div class="pipeline-step-heading">
+              <span class="step-index">02</span>
+              <strong>Gateway</strong>
+            </div>
+            <div class="pipeline-details">
+              <span>Authenticates devices</span>
+              <span>Decrypts and validates</span>
+              <span>Replay and time checks</span>
+              <span>Re-encrypts for cloud</span>
+            </div>
           </li>
-          <li class="pipeline-step">
-            <span class="step-index">04</span>
-            <strong>Cloud service</strong>
-            <span>Decode and validate</span>
+          <li class="pipeline-hop" aria-label="Hop 2 encryption">
+            <span class="hop-label">Hop 2</span>
+            <strong>ML-KEM-768</strong>
+            <span>AES-256-GCM</span>
           </li>
-          <li class="pipeline-step">
-            <span class="step-index">05</span>
-            <strong>PostgreSQL</strong>
-            <span>Store and alert</span>
+          <li class="pipeline-step pipeline-step--cloud">
+            <div class="pipeline-step-heading">
+              <span class="step-index">03</span>
+              <strong>Cloud API</strong>
+            </div>
+            <div class="pipeline-details">
+              <span>FastAPI REST API</span>
+              <span>Decrypts gateway data</span>
+              <span>Stores readings, alerts</span>
+              <span>Serves the dashboard</span>
+            </div>
           </li>
         </ol>
         <p class="pipeline-footnote">
-          Base64 is a transport encoding; it is not encryption.
+          Cloud data is stored in PostgreSQL and shown here; this dashboard
+          refreshes from the API every 5 seconds.
         </p>
       </section>
 
