@@ -25,6 +25,9 @@ services:
     environment:
       CLOUD_ML_KEM_KEY_FILE: /app/.data/cloud-ml-kem-768.json
       DATABASE_URL: postgresql://eco_route:eco_route@postgres:5432/eco_route
+      # Keys accepted by the cloud API — includes the gateway service key and all device keys
+      DEVICE_API_KEYS: ${DEVICE_API_KEYS:-bin-1=local-bin-1-key,bin-2=local-bin-2-key,bin-3=local-bin-3-key,gateway=gateway-service-key}
+      REQUIRE_DEVICE_AUTH: ${REQUIRE_DEVICE_AUTH:-true}
     volumes:
       - cloud-ml-kem-keys:/app/.data
     ports:
@@ -55,6 +58,7 @@ services:
     environment:
       CLOUD_API_URL: http://api:8000
       DEVICE_API_KEYS: ${DEVICE_API_KEYS:-bin-1=local-bin-1-key,bin-2=local-bin-2-key,bin-3=local-bin-3-key}
+      GATEWAY_SERVICE_KEY: ${GATEWAY_SERVICE_KEY:-gateway-service-key}
       GATEWAY_ML_KEM_PUBLIC_KEY: ${GATEWAY_ML_KEM_PUBLIC_KEY:-}
       GATEWAY_ML_KEM_PRIVATE_KEY: ${GATEWAY_ML_KEM_PRIVATE_KEY:-}
       GATEWAY_ML_KEM_KEY_FILE: /app/.data/gateway-ml-kem-768.json

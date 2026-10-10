@@ -258,10 +258,14 @@ def forward_to_cloud(reading: ReadingPayload) -> dict[str, object]:
             envelope["kem_ciphertext_b64"] = base64.b64encode(
                 cloud_session.kem_ciphertext
             ).decode("ascii")
+        service_key = os.getenv("GATEWAY_SERVICE_KEY", "")
         request = Request(
             f"{CLOUD_API_URL}/readings",
             data=json.dumps(envelope).encode("utf-8"),
-            headers={"Content-Type": "application/json"},
+            headers={
+                "Content-Type": "application/json",
+                **({"X-Device-API-Key": service_key} if service_key else {}),
+            },
             method="POST",
         )
         try:
@@ -411,6 +415,59 @@ def reject_replayed_envelope(payload: dict[str, object], now: datetime) -> None:
 @app.get("/healthz")
 def healthcheck() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.post("/readings/legacy", status_code=201)
+async def receive_legacy_reading(request: FastAPIRequest) -> JSONResponse:
+    """Accept legacy Base64-encoded JSON readings from un-migrated devices.
+
+    Replay protection uses a SHA-256 hash of the raw payload stored for the
+    entire migration window — no TTL — because legacy payloads carry no
+    timestamp to bound the replay window.
+    """
+    try:
+        body = await request.json()
+    except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+        raise HTTPException(
+            status_code=400, detail="Request body must be JSON"
+        ) from exc
+
+    if not isinstance(body, dict) or "payload_b64" not in body:
+        raise HTTPException(
+            status_code=400,
+            detail="Legacy readings require a payload_b64 field",
+        )
+
+    payload_b64: str = body["payload_b64"]
+    if not isinstance(payload_b64, str) or not payload_b64:
+        raise HTTPException(
+            status_code=400, detail="payload_b64 must be a non-empty string"
+        )
+
+    # Replay protection: hash stored indefinitely for the migration window
+    digest = hashlib.sha256(payload_b64.encode()).hexdigest()
+    legacy_seen: set[str] = getattr(app.state, "legacy_seen", set())
+    if digest in legacy_seen:
+        raise HTTPException(
+            status_code=409, detail="Duplicate legacy payload rejected"
+        )
+    legacy_seen.add(digest)
+    app.state.legacy_seen = legacy_seen
+
+    from models import BinReading
+
+    try:
+        bin_reading = BinReading.from_legacy_b64(payload_b64)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    reading = ReadingPayload(
+        bin_id=bin_reading.bin_id,
+        fill_level=bin_reading.fill_level,
+        recorded_at=bin_reading.recorded_at,
+    )
+    result = forward_to_cloud(reading)
+    return JSONResponse(content=result, status_code=201)
 
 
 @app.post("/readings", status_code=201)

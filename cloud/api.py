@@ -139,7 +139,14 @@ def _require_device_auth(
     if require_auth == "false":
         return
     raw_keys = os.getenv("DEVICE_API_KEYS", "")
-    valid_keys = {k.strip() for k in raw_keys.split(",") if k.strip()}
+    # Support both plain keys ("key1,key2") and id=key pairs ("bin-1=key1,bin-2=key2")
+    valid_keys: set[str] = set()
+    for entry in raw_keys.split(","):
+        entry = entry.strip()
+        if not entry:
+            continue
+        _id, sep, key = entry.partition("=")
+        valid_keys.add(key.strip() if sep else entry)
     if not x_device_api_key or x_device_api_key not in valid_keys:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
